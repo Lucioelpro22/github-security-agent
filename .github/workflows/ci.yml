@@ -67,3 +67,14 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip pip-audit
       - run: pip-audit --strict --desc
+
+  ci-gate:
+    name: CI
+    if: always()
+    needs: [quality, dependency-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        run: |
+          test "${{ needs.quality.result }}" = success
+          test "${{ needs.dependency-audit.result }}" = success
