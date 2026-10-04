@@ -1,6 +1,6 @@
 """Optional bounded GitHub reader. It never writes or executes code."""
 
-from urllib.request import Request, urlopen
+from typing import cast\nfrom urllib.request import Request, urlopen
 
 from .policy import bounded_timeout, validate_url
 
@@ -15,8 +15,8 @@ class ReadOnlyClient:
     def get_text(self, url: str) -> str:
         validate_url(url)
         request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "github-security-agent/0.1"})
-        with urlopen(request, timeout=self.timeout) as response:  # noqa: S310 - URL is allow-listed above
-            data = response.read(self.max_bytes + 1)
+        with urlopen(request, timeout=self.timeout) as response:
+            data = cast(bytes, response.read(self.max_bytes + 1))
         if len(data) > self.max_bytes:
             raise ValueError("response exceeds configured size limit")
         return data.decode("utf-8", errors="strict")
