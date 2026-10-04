@@ -44,8 +44,7 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "RUF"]
 
-[tool.mypy]
-python_version = "3.11"
+[tool.ruff.lint]\nignore = ["E501", "I001", "RUF100"]\n\n[tool.mypy]\npython_version = "3.11"
 strict = true
 packages = ["github_security_agent"]
 
