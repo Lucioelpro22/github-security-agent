@@ -1,28 +1,35 @@
-"""Safe CLI: local scanning only, no shell, no write operations."""
+"""Command-line entry point; all commands are read-only in v0.1.0."""
 
 import argparse
-import json
-from pathlib import Path
+import sys
 
-from .models import ScanPolicy
-from .redaction import redact
-from .scanner import scan_directory
+from .domain import RepositoryTarget
+from .provider import EmptyProvider
+from .service import report_json, report_markdown, scan
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Read-only GitHub security inventory")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for command in ("scan", "plan"):
+        command_parser = sub.add_parser(command, help="inspect findings without remote writes")
+        command_parser.add_argument("--owner", required=True)
+        command_parser.add_argument("--repo", required=True)
+        command_parser.add_argument("--base-branch", default="main")
+        command_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Read-only offline repository security scan")
-    parser.add_argument("root", type=Path)
-    parser.add_argument("--json", action="store_true", dest="as_json")
-    args = parser.parse_args(argv)
-    try:
-        findings = scan_directory(args.root, ScanPolicy())
-    except (OSError, ValueError) as exc:
-        print(redact(f"scan failed: {exc}"))
-        return 2
-    payload = [finding.safe_dict() for finding in findings]
-    print(json.dumps(payload, indent=2) if args.as_json else f"{len(payload)} finding(s)")
-    return 1 if findings else 0
+    args = build_parser().parse_args(argv)
+    target = RepositoryTarget(args.owner, args.repo, args.base_branch)
+    findings = scan(target, EmptyProvider())
+    if args.format == "json":
+        sys.stdout.write(report_json(target, findings))
+    else:
+        sys.stdout.write(report_markdown(target, findings))
+    return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
