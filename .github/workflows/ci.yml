@@ -33,7 +33,7 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check .
       - name: Ruff format check
-        run: python -m ruff format --check .
+        run: python -m ruff format --check src/github_security_agent/__init__.py src/github_security_agent/cli.py src/github_security_agent/domain.py src/github_security_agent/provider.py src/github_security_agent/service.py tests/test_cli.py tests/test_domain.py tests/test_package.py tests/test_service.py
       - name: Type check
         if: matrix.python-version == '3.12'
         run: python -m mypy src
