@@ -1,6 +1,7 @@
 """Optional bounded GitHub reader. It never writes or executes code."""
 
-from typing import cast\nfrom urllib.request import Request, urlopen
+from typing import cast
+from urllib.request import Request, urlopen
 
 from .policy import bounded_timeout, validate_url
 
