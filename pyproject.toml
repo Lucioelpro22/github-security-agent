@@ -29,7 +29,8 @@ addopts = "-ra --strict-config --strict-markers"
 
 [tool.coverage.run]
 branch = true
-source = ["github_security_agent"]\nomit = ["*/client.py"]
+source = ["github_security_agent"]
+omit = ["*/client.py"]
 
 [tool.coverage.report]
 fail_under = 85
