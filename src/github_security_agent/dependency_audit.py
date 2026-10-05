@@ -204,6 +204,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     manifests = 0
     total_bytes = 0
     incomplete = False
+    limit_reached = False
     started_at = time.monotonic()
 
     def record_walk_error(error: OSError) -> None:
@@ -251,6 +252,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 if truncated:
                     errors.append("dependency count reached configured limit")
                     incomplete = True
+                    limit_reached = True
                     break
             except _LockfileLimitExceeded:
                 errors.append(f"{relative}: skipped by size limit")
@@ -258,7 +260,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             except (OSError, UnicodeError, ValueError, RecursionError):
                 errors.append(f"{relative}: could not safely parse lockfile")
                 incomplete = True
-        if manifests >= MAX_LOCKFILES or len(dependencies) >= MAX_DEPENDENCIES:
+        if manifests >= MAX_LOCKFILES or limit_reached:
             break
 
     unique = {(d.ecosystem, d.name, d.version, d.manifest): d for d in dependencies}
