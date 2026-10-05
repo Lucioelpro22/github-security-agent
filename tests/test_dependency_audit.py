@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -226,3 +227,43 @@ def test_dependency_cli_handles_missing_directory_without_echoing_path(tmp_path,
     assert result.out == ""
     assert "Unable to audit" in result.err
     assert str(missing) not in result.err
+
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="named pipes are unavailable")
+def test_fifo_lockfile_is_skipped_without_blocking(tmp_path):
+    os.mkfifo(tmp_path / "requirements.txt")
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert report.errors == ("requirements.txt: could not safely parse lockfile",)
+
+
+def test_dependency_limit_is_applied_during_requirements_parsing(tmp_path, monkeypatch):
+    monkeypatch.setattr(audit, "MAX_DEPENDENCIES", 5)
+    (tmp_path / "requirements.txt").write_text(
+        "".join(f"package-{index}==1.0.0\\n" for index in range(7)),
+        encoding="utf-8",
+    )
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert len(report.dependencies) == 5
+    assert report.status == "incomplete"
+    assert "dependency count reached configured limit" in report.errors
+
+
+def test_directory_traversal_error_marks_report_incomplete(tmp_path, monkeypatch):
+    def failing_walk(root, *, followlinks=False, onerror=None):
+        if onerror is not None:
+            onerror(PermissionError("permission denied", filename=str(tmp_path / "restricted")))
+        yield str(root), [], []
+
+    monkeypatch.setattr(audit.os, "walk", failing_walk)
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "incomplete"
+    assert report.errors == ("restricted: could not enumerate directory",)
