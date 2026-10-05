@@ -8,6 +8,7 @@ versions are sent, never source files or lockfile contents.
 from __future__ import annotations
 
 import json
+import os
 import re
 import tomllib
 import urllib.error
@@ -145,7 +146,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     manifests = 0
     total_bytes = 0
     incomplete = False
-    for current, dirs, files in __import__("os").walk(base, followlinks=False):
+    for current, dirs, files in os.walk(base, followlinks=False):
         dirs[:] = sorted(name for name in dirs if name not in {".git", ".venv", "venv", "node_modules"}
                          and not (Path(current) / name).is_symlink())
         for name in sorted(files):
