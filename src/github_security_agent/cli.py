@@ -43,8 +43,10 @@ def main(argv: list[str] | None = None) -> int:
 
     target = RepositoryTarget(args.owner, args.repo, args.base_branch)
     findings = scan(target, EmptyProvider())
-    renderer = report_json if args.format == "json" else report_markdown
-    sys.stdout.write(renderer(target, findings))
+    if args.format == "json":
+        sys.stdout.write(report_json(target, findings))
+    else:
+        sys.stdout.write(report_markdown(target, findings))
     return 0
 
 
