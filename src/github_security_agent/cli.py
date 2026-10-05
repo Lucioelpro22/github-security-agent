@@ -33,7 +33,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             report = scan_repository(args.path)
         except (OSError, ValueError):
-            sys.stderr.write("Unable to scan the selected path. Check that it is a readable directory.\n")
+            sys.stderr.write(
+                "Unable to scan the selected path. Check that it is a readable directory.\n"
+            )
             return 2
         renderer = local_report_json if args.format == "json" else local_report_markdown
         sys.stdout.write(renderer(report))
