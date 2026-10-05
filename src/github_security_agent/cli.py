@@ -21,9 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser.add_argument("--base-branch", default="main")
         command_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
 
-    local_parser = sub.add_parser(
-        "scan-local", help="scan a local repository without executing it"
-    )
+    local_parser = sub.add_parser("scan-local", help="scan a local repository without executing it")
     local_parser.add_argument("path", nargs="?", default=".")
     local_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return parser
