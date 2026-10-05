@@ -233,7 +233,5 @@ def report_markdown(report: ScanReport) -> str:
                 f"| {item.severity} | `{item.rule_id}` | `{safe_file}:{item.line}` "
                 f"| {safe_summary} | {safe_recommendation} |"
             )
-    lines.extend(
-        ["", "This report is advisory; no repository files were changed or executed.", ""]
-    )
+    lines.extend(["", "This report is advisory; no repository files were changed or executed.", ""])
     return "\n".join(lines)
