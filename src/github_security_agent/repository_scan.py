@@ -173,6 +173,7 @@ def _findings_for(
                         return findings, True
     return findings, False
 
+
 def scan_repository(root: str | Path) -> ScanReport:
     """Scan bounded UTF-8 text files without following symlinks or executing code."""
     base = Path(root).resolve(strict=True)
