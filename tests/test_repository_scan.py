@@ -114,12 +114,12 @@ def test_detects_untrusted_values_interpolated_in_workflow_run(tmp_path):
     workflow.parent.mkdir(parents=True)
     workflow.write_text(
         "steps:\n"
-        "  - run: echo \"${{ github.event.pull_request.title }}\"\n"
+        '  - run: echo "${{ github.event.pull_request.title }}"\n'
         "  - run: |\n"
         "      printf '%s' \"${{ github.event.issue.body }}\"\n"
         "  - env:\n"
         "      PR_TITLE: ${{ github.event.pull_request.title }}\n"
-        "    run: echo \"$PR_TITLE\"\n",
+        '    run: echo "$PR_TITLE"\n',
         encoding="utf-8",
     )
 
@@ -136,10 +136,7 @@ def test_detects_explicitly_privileged_container_settings(tmp_path):
     manifest = tmp_path / "k8s/deployment.yaml"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
-        "securityContext:\n"
-        "  privileged: true\n"
-        "  allowPrivilegeEscalation: true\n"
-        "  runAsUser: 0\n",
+        "securityContext:\n  privileged: true\n  allowPrivilegeEscalation: true\n  runAsUser: 0\n",
         encoding="utf-8",
     )
 
@@ -157,9 +154,7 @@ def test_detects_environment_files_but_exempts_examples(tmp_path):
     (tmp_path / ".env.template").write_text("APP_MODE=development\n", encoding="utf-8")
 
     report = scan_repository(tmp_path)
-    assert [
-        finding.rule_id for finding in report.findings
-    ] == ["config.environment_file_present"]
+    assert [finding.rule_id for finding in report.findings] == ["config.environment_file_present"]
     assert report.findings[0].file == ".env"
     assert report.findings[0].confidence == "low"
 
@@ -168,9 +163,8 @@ def test_detects_explicit_root_user_in_dockerfile(tmp_path):
     (tmp_path / "Dockerfile").write_text("FROM python:3.12\nUSER root\n", encoding="utf-8")
 
     report = scan_repository(tmp_path)
-    assert [finding.rule_id for finding in report.findings] == [
-        "container.dockerfile_root_user"
-    ]
+    assert [finding.rule_id for finding in report.findings] == ["container.dockerfile_root_user"]
+
 
 def test_detects_privileged_settings_in_json_container_config(tmp_path):
     config = tmp_path / "compose.json"
