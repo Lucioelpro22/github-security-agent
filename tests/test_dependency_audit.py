@@ -6,6 +6,7 @@ import pytest
 from github_security_agent import dependency_audit as audit
 from github_security_agent.cli import main
 
+
 def test_inventory_is_local_and_parses_exact_requirements(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text(
         "requests==2.31.0\nflask>=3.0\n-e .\n", encoding="utf-8"
@@ -19,6 +20,7 @@ def test_inventory_is_local_and_parses_exact_requirements(tmp_path, monkeypatch)
     assert [(item.name, item.version, item.ecosystem) for item in report.dependencies] == [
         ("requests", "2.31.0", "PyPI")
     ]
+
 
 def test_parses_npm_and_toml_lockfiles(tmp_path):
     (tmp_path / "package-lock.json").write_text(
@@ -49,6 +51,7 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
         ("urllib3", "PyPI"),
     }
 
+
 def test_parses_nested_legacy_npm_lockfile(tmp_path):
     (tmp_path / "package-lock.json").write_text(
         json.dumps(
@@ -68,6 +71,7 @@ def test_parses_nested_legacy_npm_lockfile(tmp_path):
         ("child", "2.0.0"),
     }
 
+
 def test_osv_is_explicit_and_advisories_are_attached_to_exact_versions(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
     monkeypatch.setattr(
@@ -84,6 +88,7 @@ def test_osv_is_explicit_and_advisories_are_attached_to_exact_versions(tmp_path,
     assert report.advisories[0].dependency.version == "2.31.0"
     assert "GHSA-test" in audit.report_markdown(report)
 
+
 def test_malformed_lockfile_marks_report_incomplete(tmp_path):
     (tmp_path / "package-lock.json").write_text("{broken", encoding="utf-8")
 
@@ -91,6 +96,7 @@ def test_malformed_lockfile_marks_report_incomplete(tmp_path):
 
     assert report.status == "incomplete"
     assert report.errors == ("package-lock.json: could not parse lockfile",)
+
 
 def test_osv_request_uses_only_package_identifiers_and_checks_response(monkeypatch):
     seen = {}
@@ -122,6 +128,7 @@ def test_osv_request_uses_only_package_identifiers_and_checks_response(monkeypat
         "queries": [{"package": {"name": "requests", "ecosystem": "PyPI"}, "version": "2.31.0"}]
     }
 
+
 @pytest.mark.parametrize("body", [b"x" * (audit.MAX_RESPONSE_BYTES + 1), b'{"results":[]}'])
 def test_osv_rejects_oversized_or_mismatched_responses(monkeypatch, body):
     class Response:
@@ -140,6 +147,7 @@ def test_osv_rejects_oversized_or_mismatched_responses(monkeypatch, body):
     with pytest.raises(ValueError):
         audit._post_osv_batch([dependency])
 
+
 def test_osv_failure_and_lookup_limit_are_reported(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\nflask==3.0.0\n", encoding="utf-8")
     monkeypatch.setattr(audit, "MAX_BATCH_SIZE", 1)
@@ -152,6 +160,7 @@ def test_osv_failure_and_lookup_limit_are_reported(tmp_path, monkeypatch):
     assert report.advisory_lookup == "incomplete"
     assert any("limited to the first 1" in item for item in report.errors)
     assert any("OSV lookup failed" in item for item in report.errors)
+
 
 def test_size_and_file_count_limits_mark_report_incomplete(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
@@ -167,6 +176,7 @@ def test_size_and_file_count_limits_mark_report_incomplete(tmp_path, monkeypatch
     report = audit.audit_dependencies(tmp_path)
     assert report.status == "incomplete"
 
+
 def test_time_limit_marks_audit_incomplete(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
     monkeypatch.setattr(audit, "MAX_SCAN_SECONDS", 0)
@@ -175,6 +185,7 @@ def test_time_limit_marks_audit_incomplete(tmp_path, monkeypatch):
 
     assert report.status == "incomplete"
     assert "scan time limit reached" in report.errors
+
 
 def test_symlinked_lockfile_is_not_read(tmp_path):
     external = tmp_path.parent / "outside-requirements.txt"
@@ -186,6 +197,7 @@ def test_symlinked_lockfile_is_not_read(tmp_path):
     assert report.dependencies == ()
     external.unlink()
 
+
 def test_invalid_root_and_empty_report_outputs(tmp_path):
     with pytest.raises(OSError):
         audit.audit_dependencies(tmp_path / "missing")
@@ -195,6 +207,7 @@ def test_invalid_root_and_empty_report_outputs(tmp_path):
     assert "No supported lockfiles" in audit.report_markdown(report)
     assert json.loads(audit.report_json(report))["dependencies"] == []
 
+
 def test_dependency_cli_outputs_inventory_json(tmp_path, capsys):
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
 
@@ -203,6 +216,7 @@ def test_dependency_cli_outputs_inventory_json(tmp_path, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["advisory_lookup"] == "not_requested"
     assert output["dependencies"][0]["name"] == "requests"
+
 
 def test_dependency_cli_handles_missing_directory_without_echoing_path(tmp_path, capsys):
     missing = tmp_path / "private-path"
@@ -214,6 +228,7 @@ def test_dependency_cli_handles_missing_directory_without_echoing_path(tmp_path,
     assert "Unable to audit" in result.err
     assert str(missing) not in result.err
 
+
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="named pipes are unavailable")
 def test_fifo_lockfile_is_skipped_without_blocking(tmp_path):
     os.mkfifo(tmp_path / "requirements.txt")
@@ -223,6 +238,7 @@ def test_fifo_lockfile_is_skipped_without_blocking(tmp_path):
     assert report.status == "incomplete"
     assert report.dependencies == ()
     assert report.errors == ("requirements.txt: could not safely parse lockfile",)
+
 
 def test_dependency_limit_is_applied_during_requirements_parsing(tmp_path, monkeypatch):
     monkeypatch.setattr(audit, "MAX_DEPENDENCIES", 5)
@@ -237,6 +253,7 @@ def test_dependency_limit_is_applied_during_requirements_parsing(tmp_path, monke
     assert report.status == "incomplete"
     assert "dependency count reached configured limit" in report.errors
 
+
 def test_directory_traversal_error_marks_report_incomplete(tmp_path, monkeypatch):
     def failing_walk(root, *, followlinks=False, onerror=None):
         if onerror is not None:
@@ -250,6 +267,7 @@ def test_directory_traversal_error_marks_report_incomplete(tmp_path, monkeypatch
     assert report.status == "incomplete"
     assert report.errors == ("restricted: could not enumerate directory",)
 
+
 def test_lockfile_limit_marks_report_incomplete(tmp_path, monkeypatch):
     monkeypatch.setattr(audit, "MAX_LOCKFILES", 1)
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
@@ -262,6 +280,7 @@ def test_lockfile_limit_marks_report_incomplete(tmp_path, monkeypatch):
     assert report.status == "incomplete"
     assert report.manifests_scanned == 1
     assert "lockfile count reached configured limit" in report.errors
+
 
 def test_osv_skips_secret_like_package_names(tmp_path, monkeypatch):
     (tmp_path / "package-lock.json").write_text(
@@ -280,6 +299,7 @@ def test_osv_skips_secret_like_package_names(tmp_path, monkeypatch):
     assert report.advisory_lookup == "incomplete"
     assert any("invalid package identifiers" in item for item in report.errors)
 
+
 def test_osv_request_payload_has_a_byte_limit(monkeypatch):
     monkeypatch.setattr(audit, "MAX_REQUEST_BYTES", 1)
     monkeypatch.setattr(
@@ -292,12 +312,14 @@ def test_osv_request_payload_has_a_byte_limit(monkeypatch):
     with pytest.raises(ValueError, match="request exceeded"):
         audit._post_osv_batch([dependency])
 
+
 def test_osv_identifier_validation_rejects_secret_like_versions():
     dependency = audit.Dependency("requests", "ghp_privatecredential", "PyPI", "requirements.txt")
 
     assert not audit._is_safe_osv_query(dependency)
     token_like_version = audit.Dependency("requests", "1" + "a" * 40, "PyPI", "requirements.txt")
     assert not audit._is_safe_osv_query(token_like_version)
+
 
 def test_exact_lockfile_limit_without_additional_lockfiles_is_complete(tmp_path, monkeypatch):
     monkeypatch.setattr(audit, "MAX_LOCKFILES", 1)
