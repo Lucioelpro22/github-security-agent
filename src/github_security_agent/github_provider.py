@@ -38,7 +38,7 @@ class GitHubApiProvider:
     def list_findings(self, target: RepositoryTarget) -> Iterable[SecurityFinding]:
         owner = _validate_segment(target.owner, "owner")
         repository = _validate_segment(target.name, "repository")
-        base = f"{API_BASE}/repos/{owner}/{repository}"
+        base = f"/repos/{owner}/{repository}"
         endpoints = (
             ("dependabot", f"{base}/dependabot/alerts?state=open"),
             ("code_scanning", f"{base}/code-scanning/alerts?state=open"),
