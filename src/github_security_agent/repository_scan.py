@@ -142,7 +142,7 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                 )
             )
         if container_config:
-            config_true = _CONFIG_TRUE.match(line)
+            config_true = _CONFIG_TRUE.search(line)
             if config_true:
                 key = config_true.group(1).lower()
                 rule_id = (
@@ -161,7 +161,7 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                         "Disable the setting unless a documented requirement justifies it; apply least privilege.",
                     )
                 )
-            if _CONFIG_ROOT.match(line):
+            if _CONFIG_ROOT.search(line):
                 findings.append(
                     Finding(
                         "container.run_as_root",
