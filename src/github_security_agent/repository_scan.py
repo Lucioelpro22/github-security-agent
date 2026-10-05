@@ -18,7 +18,26 @@ MAX_FILES = 10_000
 MAX_FINDINGS = 5_000
 MAX_SCAN_SECONDS = 30
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
-BINARY_SUFFIXES = {".7z", ".bmp", ".dll", ".dylib", ".exe", ".gif", ".gz", ".ico", ".jpeg", ".jpg", ".pdf", ".png", ".so", ".tar", ".webp", ".woff", ".woff2", ".zip"}
+BINARY_SUFFIXES = {
+    ".7z",
+    ".bmp",
+    ".dll",
+    ".dylib",
+    ".exe",
+    ".gif",
+    ".gz",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".pdf",
+    ".png",
+    ".so",
+    ".tar",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".zip",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,9 +251,7 @@ def scan_repository(root: str | Path) -> ScanReport:
             files_scanned += 1
             relative = path.relative_to(base).as_posix()
             remaining_findings = MAX_FINDINGS - len(findings)
-            found, findings_truncated = _findings_for(
-                path, relative, text, remaining_findings
-            )
+            found, findings_truncated = _findings_for(path, relative, text, remaining_findings)
             findings.extend(found)
             if findings_truncated:
                 incomplete = True
@@ -255,6 +272,7 @@ def scan_repository(root: str | Path) -> ScanReport:
         files_unsupported=files_unsupported,
         findings=tuple(findings),
     )
+
 
 def report_json(report: ScanReport) -> str:
     return json.dumps(asdict(report), indent=2, sort_keys=True)
