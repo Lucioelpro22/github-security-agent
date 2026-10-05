@@ -11,6 +11,7 @@ import html
 import json
 import os
 import re
+import stat
 import tomllib
 import time
 import urllib.error
@@ -56,33 +57,46 @@ class DependencyReport:
     errors: tuple[str, ...]
 
 
-def _parse_requirements(text: str, path: str) -> list[Dependency]:
-    records = []
+def _parse_requirements(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    records: list[Dependency] = []
     for line in text.splitlines():
         line = line.split("#", 1)[0].strip()
         match = _PINNED.fullmatch(line)
         if match:
+            if len(records) >= limit:
+                return records, True
             records.append(Dependency(match.group(1), match.group(2), "PyPI", path))
-    return records
+    return records, False
 
 
-def _walk_npm_dependencies(dependencies: Any, path: str) -> list[Dependency]:
+def _walk_npm_dependencies(
+    dependencies: Any, path: str, limit: int
+) -> tuple[list[Dependency], bool]:
     records: list[Dependency] = []
-    if not isinstance(dependencies, dict):
-        return records
-    for name, value in dependencies.items():
-        if not isinstance(name, str) or not isinstance(value, dict):
+    pending = [dependencies]
+    while pending:
+        current = pending.pop()
+        if not isinstance(current, dict):
             continue
-        version = value.get("version")
-        if isinstance(version, str) and version:
-            records.append(Dependency(name, version, "npm", path))
-        records.extend(_walk_npm_dependencies(value.get("dependencies"), path))
-    return records
+        for name, value in current.items():
+            if not isinstance(name, str) or not isinstance(value, dict):
+                continue
+            version = value.get("version")
+            if isinstance(version, str) and version:
+                if len(records) >= limit:
+                    return records, True
+                records.append(Dependency(name, version, "npm", path))
+            nested = value.get("dependencies")
+            if isinstance(nested, dict):
+                pending.append(nested)
+    return records, False
 
 
-def _parse_lockfile(path: Path, relative: str, text: str) -> list[Dependency]:
+def _parse_lockfile(
+    path: Path, relative: str, text: str, limit: int
+) -> tuple[list[Dependency], bool]:
     if path.name in {"requirements.txt", "requirements-lock.txt"}:
-        return _parse_requirements(text, relative)
+        return _parse_requirements(text, relative, limit)
     if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         data = json.loads(text)
         records: list[Dependency] = []
@@ -94,24 +108,58 @@ def _parse_lockfile(path: Path, relative: str, text: str) -> list[Dependency]:
                 name = package_path.rsplit("node_modules/", 1)[-1]
                 version = value.get("version")
                 if isinstance(version, str) and name:
+                    if len(records) >= limit:
+                        return records, True
                     records.append(Dependency(name, version, "npm", relative))
         if not records and isinstance(data, dict):
-            records = _walk_npm_dependencies(data.get("dependencies"), relative)
-        return records
+            return _walk_npm_dependencies(data.get("dependencies"), relative, limit)
+        return records, False
     if path.name in {"poetry.lock", "Cargo.lock"}:
         data = tomllib.loads(text)
         ecosystem = "PyPI" if path.name == "poetry.lock" else "crates.io"
         packages = data.get("package", [])
         if not isinstance(packages, list):
-            return []
-        return [
-            Dependency(item["name"], item["version"], ecosystem, relative)
-            for item in packages
-            if isinstance(item, dict)
-            and isinstance(item.get("name"), str)
-            and isinstance(item.get("version"), str)
-        ]
-    return []
+            return [], False
+        records: list[Dependency] = []
+        for item in packages:
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get("name"), str)
+                and isinstance(item.get("version"), str)
+            ):
+                if len(records) >= limit:
+                    return records, True
+                records.append(
+                    Dependency(item["name"], item["version"], ecosystem, relative)
+                )
+        return records, False
+    return [], False
+
+
+class _LockfileLimitExceeded(ValueError):
+    """Raised when a lockfile exceeds the remaining byte budget."""
+
+
+def _read_bounded_lockfile(path: Path, remaining_bytes: int) -> str:
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError("lockfile is not a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("lockfile is not a regular file")
+        if (before.st_dev, before.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise ValueError("lockfile changed while opening")
+        allowed = min(MAX_LOCKFILE_BYTES, remaining_bytes)
+        if metadata.st_size > allowed:
+            raise _LockfileLimitExceeded
+        data = stream.read(allowed + 1)
+        if len(data) > allowed or len(data) != metadata.st_size:
+            raise ValueError("lockfile changed while reading")
+    return data.decode("utf-8")
 
 
 def _post_osv_batch(dependencies: list[Dependency]) -> list[list[dict[str, Any]]]:
@@ -157,7 +205,18 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     total_bytes = 0
     incomplete = False
     started_at = time.monotonic()
-    for current, dirs, files in os.walk(base, followlinks=False):
+
+    def record_walk_error(error: OSError) -> None:
+        nonlocal incomplete
+        filename = error.filename
+        try:
+            relative = Path(filename).relative_to(base).as_posix() if filename else "<unknown>"
+        except ValueError:
+            relative = "<unknown>"
+        errors.append(f"{relative}: could not enumerate directory")
+        incomplete = True
+
+    for current, dirs, files in os.walk(base, followlinks=False, onerror=record_walk_error):
         if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
             errors.append("scan time limit reached")
             incomplete = True
@@ -181,30 +240,24 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 break
             relative = path.relative_to(base).as_posix()
             try:
-                size = path.stat().st_size
-                if size > MAX_LOCKFILE_BYTES or total_bytes + size > MAX_TOTAL_BYTES:
-                    errors.append(f"{relative}: skipped by size limit")
-                    incomplete = True
-                    continue
-                text = path.read_text(encoding="utf-8")
-                total_bytes += size
+                text = _read_bounded_lockfile(path, MAX_TOTAL_BYTES - total_bytes)
+                total_bytes += len(text.encode("utf-8"))
                 manifests += 1
-                dependencies.extend(_parse_lockfile(path, relative, text))
-            except (
-                OSError,
-                UnicodeError,
-                ValueError,
-                json.JSONDecodeError,
-                tomllib.TOMLDecodeError,
-                RecursionError,
-            ):
-                errors.append(f"{relative}: could not parse lockfile")
+                remaining_dependencies = MAX_DEPENDENCIES - len(dependencies)
+                parsed, truncated = _parse_lockfile(
+                    path, relative, text, remaining_dependencies
+                )
+                dependencies.extend(parsed)
+                if truncated:
+                    errors.append("dependency count reached configured limit")
+                    incomplete = True
+                    break
+            except _LockfileLimitExceeded:
+                errors.append(f"{relative}: skipped by size limit")
                 incomplete = True
-            if len(dependencies) > MAX_DEPENDENCIES:
-                dependencies = dependencies[:MAX_DEPENDENCIES]
-                errors.append("dependency count reached configured limit")
+            except (OSError, UnicodeError, ValueError, RecursionError):
+                errors.append(f"{relative}: could not safely parse lockfile")
                 incomplete = True
-                break
         if manifests >= MAX_LOCKFILES or len(dependencies) >= MAX_DEPENDENCIES:
             break
 
