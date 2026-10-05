@@ -58,15 +58,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "audit-dependencies":
         try:
-            report = audit_dependencies(args.path, query_osv=args.query_osv)
+            dependency_report = audit_dependencies(args.path, query_osv=args.query_osv)
         except (OSError, ValueError):
             sys.stderr.write(
                 "Unable to audit the selected path. Check that it is a readable directory.\n"
             )
             return 2
-        renderer = dependency_report_json if args.format == "json" else dependency_report_markdown
-        sys.stdout.write(renderer(report))
-        return 0 if report.status == "complete" else 2
+        dependency_renderer = (
+            dependency_report_json
+            if args.format == "json"
+            else dependency_report_markdown
+        )
+        sys.stdout.write(dependency_renderer(dependency_report))
+        return 0 if dependency_report.status == "complete" else 2
 
     target = RepositoryTarget(args.owner, args.repo, args.base_branch)
     findings = scan(target, EmptyProvider())
