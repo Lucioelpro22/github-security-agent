@@ -33,7 +33,9 @@ _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)
 _SAFE_UNSCOPED_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 _SAFE_SCOPED_NAME = re.compile(r"^@[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$")
 _SAFE_VERSION = re.compile(r"^v?\d[A-Za-z0-9.+!_-]{0,127}$")
-_SENSITIVE_NAME = re.compile(r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\b|xox[baprs]-|sk-[a-z0-9_-]{20,})")
+_SENSITIVE_NAME = re.compile(
+    r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\b|xox[baprs]-|sk-[a-z0-9_-]{20,})"
+)
 _SENSITIVE_VERSION_TOKEN = re.compile(r"(?i)(?<![A-Za-z0-9])[A-Za-z0-9]{32,}(?![A-Za-z0-9])")
 MAX_REQUEST_BYTES = 64_000
 
@@ -135,9 +137,7 @@ def _parse_lockfile(
             ):
                 if len(records) >= limit:
                     return records, True
-                records.append(
-                    Dependency(item["name"], item["version"], ecosystem, relative)
-                )
+                records.append(Dependency(item["name"], item["version"], ecosystem, relative))
         return records, False
     return [], False
 
@@ -273,9 +273,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 total_bytes += len(text.encode("utf-8"))
                 manifests += 1
                 remaining_dependencies = MAX_DEPENDENCIES - len(dependencies)
-                parsed, truncated = _parse_lockfile(
-                    path, relative, text, remaining_dependencies
-                )
+                parsed, truncated = _parse_lockfile(path, relative, text, remaining_dependencies)
                 dependencies.extend(parsed)
                 if truncated:
                     errors.append("dependency count reached configured limit")
