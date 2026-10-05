@@ -86,3 +86,29 @@ def test_json_report_is_deterministic(tmp_path):
 
     assert report_json(report) == report_json(report)
     assert [finding.file for finding in report.findings] == ["a.txt", "z.txt"]
+
+
+
+def test_finding_limit_marks_report_incomplete(tmp_path, monkeypatch):
+    import github_security_agent.repository_scan as repository_scan
+
+    monkeypatch.setattr(repository_scan, "MAX_FINDINGS", 1)
+    token = "github_pat_" + "C" * 40
+    (tmp_path / "many.txt").write_text(f"{token}\\n{token}\\n", encoding="utf-8")
+
+    report = repository_scan.scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert len(report.findings) == 1
+
+
+def test_time_limit_marks_report_incomplete(tmp_path, monkeypatch):
+    import github_security_agent.repository_scan as repository_scan
+
+    monkeypatch.setattr(repository_scan, "MAX_SCAN_SECONDS", 30)
+    clock = iter((0.0, 0.0, 30.0))
+    monkeypatch.setattr(repository_scan.time, "monotonic", lambda: next(clock))
+    (tmp_path / "input.txt").write_text("safe", encoding="utf-8")
+
+    report = repository_scan.scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert report.files_scanned == 0
