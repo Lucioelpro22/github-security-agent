@@ -53,7 +53,12 @@ def _markdown_cell(value: str) -> str:
 
 def report_markdown(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -> str:
     rows = list(findings)
-    lines = [f"# Security report: {_markdown_cell(target.full_name)}", "", f"Open findings: **{len(rows)}**", ""]
+    lines = [
+        f"# Security report: {_markdown_cell(target.full_name)}",
+        "",
+        f"Open findings: **{len(rows)}**",
+        "",
+    ]
     if not rows:
         return "\n".join([*lines, "No findings returned by the read-only provider.", ""])
     lines.extend(["| Class | ID | Severity | Title |", "|---|---|---|---|"])
