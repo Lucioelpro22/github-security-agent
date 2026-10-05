@@ -12,6 +12,8 @@ def test_detects_workflow_risks_and_orders_findings(tmp_path):
     workflow.parent.mkdir(parents=True)
     workflow.write_text(
         "permissions: write-all\n"
+        "# permissions: write-all\n"
+        "# pull_request_target:\n"
         "on:\n  pull_request_target:\n"
         "  steps:\n    - uses: actions/checkout@v4\n"
         "    - uses: actions/setup-python@0123456789abcdef0123456789abcdef01234567\n",
@@ -65,7 +67,8 @@ def test_oversized_and_invalid_utf8_files_make_scan_incomplete(tmp_path, monkeyp
 
     report = scan_repository(tmp_path)
     assert report.status == "incomplete"
-    assert report.files_skipped == 2
+    assert report.files_skipped == 1
+    assert report.files_unsupported == 1
     assert report.findings == ()
 
 
@@ -107,3 +110,29 @@ def test_time_limit_marks_report_incomplete(tmp_path, monkeypatch):
     report = repository_scan.scan_repository(tmp_path)
     assert report.status == "incomplete"
     assert report.files_scanned == 0
+
+
+def test_binary_files_are_reported_as_unsupported_not_incomplete(tmp_path):
+    (tmp_path / "image.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n\\x00binary")
+    (tmp_path / "source.txt").write_text("safe text", encoding="utf-8")
+
+    report = scan_repository(tmp_path)
+
+    assert report.status == "complete"
+    assert report.files_scanned == 1
+    assert report.files_unsupported == 1
+    assert report.files_skipped == 0
+    assert "Unsupported files skipped: **1**" in report_markdown(report)
+
+
+def test_single_file_findings_stop_at_the_configured_limit(tmp_path, monkeypatch):
+    import github_security_agent.repository_scan as repository_scan
+
+    monkeypatch.setattr(repository_scan, "MAX_FINDINGS", 2)
+    token = "github_pat_" + "D" * 40
+    (tmp_path / "many.txt").write_text((token + "\\n") * 1000, encoding="utf-8")
+
+    report = repository_scan.scan_repository(tmp_path)
+
+    assert report.status == "incomplete"
+    assert len(report.findings) == 2
