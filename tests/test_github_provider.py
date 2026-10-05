@@ -1,6 +1,7 @@
 import io
 import json
 import urllib.error
+import urllib.parse
 
 import pytest
 
@@ -37,6 +38,10 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
 
     def fake_urlopen(request, timeout):
         requests.append(request)
+        parsed_url = urllib.parse.urlsplit(request.full_url)
+        assert parsed_url.scheme == "https"
+        assert parsed_url.netloc == "api.github.com"
+        assert parsed_url.path.startswith("/repos/owner/repo/")
         assert timeout == 10
         assert request.get_method() == "GET"
         assert request.get_header("Authorization") == f"Bearer {TOKEN}"
