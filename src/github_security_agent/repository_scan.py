@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import stat
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ MAX_FILES = 10_000
 MAX_FINDINGS = 5_000
 MAX_SCAN_SECONDS = 30
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
+BINARY_SUFFIXES = {".7z", ".bmp", ".dll", ".dylib", ".exe", ".gif", ".gz", ".ico", ".jpeg", ".jpg", ".pdf", ".png", ".so", ".tar", ".webp", ".woff", ".woff2", ".zip"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +38,7 @@ class ScanReport:
     status: Literal["complete", "incomplete"]
     files_scanned: int
     files_skipped: int
+    files_unsupported: int
     findings: tuple[Finding, ...]
 
 
@@ -74,7 +77,9 @@ def _secret_rule(line: str) -> str | None:
     return None
 
 
-def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
+def _findings_for(
+    path: Path, relative: str, text: str, max_findings: int
+) -> tuple[list[Finding], bool]:
     findings: list[Finding] = []
     workflow = relative.startswith(".github/workflows/") and path.suffix.lower() in {
         ".yml",
@@ -94,9 +99,11 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                     "Revoke and rotate the credential if it is real, then move it to a secret manager.",
                 )
             )
-        if not workflow:
+            if len(findings) >= max_findings:
+                return findings, True
+        if not workflow or line.lstrip().startswith("#"):
             continue
-        if re.match(r"^\s*permissions\s*:\s*write-all\b", line, re.IGNORECASE):
+        if re.match(r"^\\s*permissions\\s*:\\s*write-all\\b", line, re.IGNORECASE):
             findings.append(
                 Finding(
                     "workflow.permissions_write_all",
@@ -108,7 +115,9 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                     "Declare only the specific permissions the workflow needs, preferably read-only.",
                 )
             )
-        if re.search(r"\bpull_request_target\s*:", line):
+            if len(findings) >= max_findings:
+                return findings, True
+        if re.search(r"\\bpull_request_target\\s*:", line):
             findings.append(
                 Finding(
                     "workflow.pull_request_target",
@@ -120,6 +129,8 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                     "Avoid checking out or executing fork-controlled content with privileged tokens or secrets.",
                 )
             )
+            if len(findings) >= max_findings:
+                return findings, True
         use = _ACTION_USE.match(line)
         if use:
             reference = use.group(1)
@@ -139,11 +150,12 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                             "Pin the action to a reviewed full commit SHA and keep its version in a comment.",
                         )
                     )
-    return findings
-
+                    if len(findings) >= max_findings:
+                        return findings, True
+    return findings, False
 
 def scan_repository(root: str | Path) -> ScanReport:
-    """Scan text files under root without following symlinks or executing repository code."""
+    """Scan bounded UTF-8 text files without following symlinks or executing code."""
     base = Path(root).resolve(strict=True)
     if not base.is_dir():
         raise ValueError("scan root must be a directory")
@@ -151,6 +163,7 @@ def scan_repository(root: str | Path) -> ScanReport:
     findings: list[Finding] = []
     files_scanned = 0
     files_skipped = 0
+    files_unsupported = 0
     total_bytes = 0
     incomplete = False
     limit_reached = False
@@ -172,35 +185,65 @@ def scan_repository(root: str | Path) -> ScanReport:
                 limit_reached = True
                 break
             path = current_path / name
-            if path.is_symlink() or not path.is_file():
+            if path.is_symlink():
                 continue
-            if files_scanned + files_skipped >= MAX_FILES:
+            if path.suffix.lower() in BINARY_SUFFIXES:
+                files_unsupported += 1
+                continue
+            if files_scanned + files_skipped + files_unsupported >= MAX_FILES:
                 incomplete = True
+                limit_reached = True
                 break
+            remaining_bytes = MAX_TOTAL_BYTES - total_bytes
+            read_limit = min(MAX_FILE_BYTES, remaining_bytes)
+            if read_limit <= 0:
+                files_skipped += 1
+                incomplete = True
+                limit_reached = True
+                break
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
             try:
-                size = path.stat().st_size
-                if size > MAX_FILE_BYTES or total_bytes + size > MAX_TOTAL_BYTES:
-                    files_skipped += 1
-                    incomplete = True
-                    continue
-                data = path.read_bytes()
-                total_bytes += len(data)
-                text = data.decode("utf-8")
-            except (OSError, UnicodeDecodeError):
+                descriptor = os.open(path, flags)
+                with os.fdopen(descriptor, "rb") as source:
+                    file_info = os.fstat(source.fileno())
+                    if not stat.S_ISREG(file_info.st_mode):
+                        continue
+                    data = source.read(read_limit + 1)
+            except OSError:
                 files_skipped += 1
                 incomplete = True
                 continue
+            total_bytes += len(data)
+            if len(data) > read_limit:
+                files_skipped += 1
+                incomplete = True
+                limit_reached = total_bytes >= MAX_TOTAL_BYTES
+                if limit_reached:
+                    break
+                continue
+            if b"\\x00" in data[:8192]:
+                files_unsupported += 1
+                continue
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                files_unsupported += 1
+                continue
             files_scanned += 1
             relative = path.relative_to(base).as_posix()
-            findings.extend(_findings_for(path, relative, text))
-            if len(findings) >= MAX_FINDINGS:
-                findings = findings[:MAX_FINDINGS]
+            remaining_findings = MAX_FINDINGS - len(findings)
+            found, findings_truncated = _findings_for(
+                path, relative, text, remaining_findings
+            )
+            findings.extend(found)
+            if findings_truncated:
                 incomplete = True
                 limit_reached = True
                 break
         if limit_reached:
             break
-        if files_scanned + files_skipped >= MAX_FILES:
+        if files_scanned + files_skipped + files_unsupported >= MAX_FILES:
+            incomplete = True
             break
 
     findings.sort(key=lambda finding: (finding.file, finding.line, finding.rule_id))
@@ -209,9 +252,9 @@ def scan_repository(root: str | Path) -> ScanReport:
         status="incomplete" if incomplete else "complete",
         files_scanned=files_scanned,
         files_skipped=files_skipped,
+        files_unsupported=files_unsupported,
         findings=tuple(findings),
     )
-
 
 def report_json(report: ScanReport) -> str:
     return json.dumps(asdict(report), indent=2, sort_keys=True)
@@ -223,7 +266,8 @@ def report_markdown(report: ScanReport) -> str:
         "",
         f"- Status: **{report.status}**",
         f"- Files scanned: **{report.files_scanned}**",
-        f"- Files skipped: **{report.files_skipped}**",
+        f"- Files skipped (errors or limits): **{report.files_skipped}**",
+        f"- Unsupported files skipped: **{report.files_unsupported}**",
         f"- Findings: **{len(report.findings)}**",
         "",
     ]
