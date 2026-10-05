@@ -320,6 +320,8 @@ def test_osv_identifier_validation_rejects_secret_like_versions():
     dependency = audit.Dependency("requests", "ghp_privatecredential", "PyPI", "requirements.txt")
 
     assert not audit._is_safe_osv_query(dependency)
+    token_like_version = audit.Dependency("requests", "1" + "a" * 40, "PyPI", "requirements.txt")
+    assert not audit._is_safe_osv_query(token_like_version)
 
 
 
