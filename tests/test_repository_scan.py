@@ -94,7 +94,7 @@ def test_finding_limit_marks_report_incomplete(tmp_path, monkeypatch):
 
     monkeypatch.setattr(repository_scan, "MAX_FINDINGS", 1)
     token = "github_pat_" + "C" * 40
-    (tmp_path / "many.txt").write_text(f"{token}\\n{token}\\n", encoding="utf-8")
+    (tmp_path / "many.txt").write_text(f"{token}\n{token}\n", encoding="utf-8")
 
     report = repository_scan.scan_repository(tmp_path)
     assert report.status == "incomplete"
