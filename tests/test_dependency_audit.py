@@ -95,7 +95,7 @@ def test_malformed_lockfile_marks_report_incomplete(tmp_path):
     report = audit.audit_dependencies(tmp_path)
 
     assert report.status == "incomplete"
-    assert report.errors == ("package-lock.json: could not parse lockfile",)
+    assert report.errors == ("package-lock.json: could not safely parse lockfile",)
 
 
 def test_osv_request_uses_only_package_identifiers_and_checks_response(monkeypatch):
@@ -257,7 +257,7 @@ def test_dependency_limit_is_applied_during_requirements_parsing(tmp_path, monke
 def test_directory_traversal_error_marks_report_incomplete(tmp_path, monkeypatch):
     def failing_walk(root, *, followlinks=False, onerror=None):
         if onerror is not None:
-            onerror(PermissionError("permission denied", filename=str(tmp_path / "restricted")))
+            onerror(PermissionError(13, "permission denied", str(tmp_path / "restricted")))
         yield str(root), [], []
 
     monkeypatch.setattr(audit.os, "walk", failing_walk)
