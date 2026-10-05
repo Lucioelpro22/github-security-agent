@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -13,6 +14,8 @@ from typing import Literal
 MAX_FILE_BYTES = 1_000_000
 MAX_TOTAL_BYTES = 25_000_000
 MAX_FILES = 10_000
+MAX_FINDINGS = 5_000
+MAX_SCAN_SECONDS = 30
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
 
 
@@ -150,8 +153,13 @@ def scan_repository(root: str | Path) -> ScanReport:
     files_skipped = 0
     total_bytes = 0
     incomplete = False
+    limit_reached = False
+    started_at = time.monotonic()
 
     for current, dirs, files in os.walk(base, topdown=True, followlinks=False):
+        if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
+            incomplete = True
+            break
         current_path = Path(current)
         dirs[:] = sorted(
             name
@@ -159,6 +167,10 @@ def scan_repository(root: str | Path) -> ScanReport:
             if name not in IGNORED_DIRS and not (current_path / name).is_symlink()
         )
         for name in sorted(files):
+            if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
+                incomplete = True
+                limit_reached = True
+                break
             path = current_path / name
             if path.is_symlink() or not path.is_file():
                 continue
@@ -181,6 +193,13 @@ def scan_repository(root: str | Path) -> ScanReport:
             files_scanned += 1
             relative = path.relative_to(base).as_posix()
             findings.extend(_findings_for(path, relative, text))
+            if len(findings) >= MAX_FINDINGS:
+                findings = findings[:MAX_FINDINGS]
+                incomplete = True
+                limit_reached = True
+                break
+        if limit_reached:
+            break
         if files_scanned + files_skipped >= MAX_FILES:
             break
 
