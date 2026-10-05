@@ -19,7 +19,8 @@ MAX_RESPONSE_BYTES = 2_000_000
 PER_PAGE = 100
 MAX_PAGES_PER_ALERT_CLASS = 10
 _OWNER_OR_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
-_NEXT_LINK = re.compile(r'<([^>]+)>;\s*rel="?next"?', re.IGNORECASE)
+_NEXT_REL = re.compile(r"(?:^|;)\s*rel\s*=\s*"?next"?(?:\s*;|\s*$)", re.IGNORECASE)
+_LINK_TARGET = re.compile(r"<([^>]+)>")
 
 
 class GitHubProviderError(RuntimeError):
@@ -55,7 +56,7 @@ class GitHubApiProvider:
         findings: list[SecurityFinding] = []
         for page_number in range(1, MAX_PAGES_PER_ALERT_CLASS + 1):
             payload, link_header = self._get_page(url)
-            if not isinstance(payload, list):
+            if not isinstance(payload, list) or len(payload) > PER_PAGE:
                 raise GitHubProviderError("GitHub returned an unexpected alert response")
             for item in payload:
                 if not isinstance(item, dict):
@@ -127,7 +128,9 @@ def _next_url(link_header: str | None, endpoint: str, *, expected_page: int) -> 
         return None
     next_url = None
     for item in link_header.split(","):
-        match = _NEXT_LINK.search(item.strip())
+        if not _NEXT_REL.search(item):
+            continue
+        match = _LINK_TARGET.search(item)
         if match:
             next_url = match.group(1)
             break
