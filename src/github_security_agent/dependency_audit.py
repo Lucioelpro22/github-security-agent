@@ -7,8 +7,8 @@ versions are sent, never source files or lockfile contents.
 
 from __future__ import annotations
 
+import html
 import json
-import os
 import re
 import tomllib
 import urllib.error
@@ -22,6 +22,7 @@ MAX_TOTAL_BYTES = 20_000_000
 MAX_LOCKFILES = 100
 MAX_DEPENDENCIES = 5_000
 MAX_BATCH_SIZE = 100
+MAX_OSV_BATCHES = 5
 MAX_RESPONSE_BYTES = 2_000_000
 OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
@@ -123,7 +124,7 @@ def _post_osv_batch(dependencies: list[Dependency]) -> list[list[dict[str, Any]]
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=8) as response:
+    with urllib.request.urlopen(request, timeout=5) as response:
         body = response.read(MAX_RESPONSE_BYTES + 1)
     if len(body) > MAX_RESPONSE_BYTES:
         raise ValueError("OSV response exceeded the configured size limit")
@@ -146,7 +147,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     manifests = 0
     total_bytes = 0
     incomplete = False
-    for current, dirs, files in os.walk(base, followlinks=False):
+    for current, dirs, files in __import__("os").walk(base, followlinks=False):
         dirs[:] = sorted(name for name in dirs if name not in {".git", ".venv", "venv", "node_modules"}
                          and not (Path(current) / name).is_symlink())
         for name in sorted(files):
@@ -184,7 +185,11 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     lookup = "not_requested"
     if query_osv:
         lookup = "complete"
-        for offset in range(0, len(dependencies), MAX_BATCH_SIZE):
+        max_queried = MAX_BATCH_SIZE * MAX_OSV_BATCHES
+        if len(dependencies) > max_queried:
+            lookup = "incomplete"
+            errors.append(f"OSV lookup limited to the first {max_queried} dependencies")
+        for offset in range(0, min(len(dependencies), max_queried), MAX_BATCH_SIZE):
             batch = dependencies[offset:offset + MAX_BATCH_SIZE]
             try:
                 results = _post_osv_batch(batch)
@@ -214,10 +219,19 @@ def report_markdown(report: DependencyReport) -> str:
         lines += ["| Advisory | Package | Version | Ecosystem | Lockfile | Summary |", "|---|---|---|---|---|---|"]
         for item in report.advisories:
             d = item.dependency
-            summary = item.summary.replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| {item.advisory_id} | {d.name} | {d.version} | {d.ecosystem} | {d.manifest} | {summary} |")
+            cells = (item.advisory_id, d.name, d.version, d.ecosystem, d.manifest, item.summary)
+            safe_cells = [
+                html.escape(cell, quote=False).replace("|", "\\|").replace("\n", " ")
+                for cell in cells
+            ]
+            lines.append("| " + " | ".join(safe_cells) + " |")
     else:
-        lines.append("No advisories were returned for the inventoried exact package versions." if report.advisory_lookup == "complete" else "No advisories checked. Run with --query-osv to query OSV.dev.")
+        if not report.dependencies:
+            lines.append("No supported lockfiles or exact dependency versions were found.")
+        elif report.advisory_lookup == "complete":
+            lines.append("No advisories were returned for the inventoried exact package versions.")
+        else:
+            lines.append("No advisories checked. Run with --query-osv to query OSV.dev.")
     if report.errors:
         lines += ["", "## Incomplete items", *[f"- {item}" for item in report.errors]]
     lines += ["", "Advisory lookup is best-effort; verify results against the upstream advisory before remediation.", ""]
