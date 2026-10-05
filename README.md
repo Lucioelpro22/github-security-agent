@@ -21,7 +21,18 @@ El comando `scan-local` analiza el directorio local como datos: no ejecuta scrip
 - Los controles de workflows son heurísticos basados en texto, no una validación semántica de YAML. Revisá los hallazgos y posibles falsos positivos.
 - El recorrido omite enlaces simbólicos, directorios comunes de dependencias/caché y archivos mayores de 1 MB; el presupuesto total es 25 MB y 10.000 archivos.
 
-Sin credenciales, la integración remota sigue usando un proveedor offline vacío. La integración real de GitHub se incorporará detrás de la interfaz del proveedor, con permisos mínimos y aprobación humana.
+Sin credenciales, la integración remota usa el proveedor offline vacío. La API real es optativa y de solo lectura; el token se obtiene únicamente de una variable de entorno.
+
+## Proveedor GitHub de solo lectura
+
+```bash
+export GITHUB_TOKEN="<token de corta duración o fine-grained>"
+github-security-agent scan --owner OWNER --repo REPOSITORY --provider github
+```
+
+El proveedor consulta alertas abiertas de Dependabot, Code Scanning y Secret Scanning. El token fine-grained debe tener únicamente permisos **read** para esas tres categorías y estar limitado al repositorio objetivo. El valor del token no se admite por argumento ni se incluye en los informes. Secret Scanning se consulta con `hide_secret=true`; nunca se incluye el valor literal del secreto en los resultados.
+
+Si falta un permiso, una función de alertas no está disponible, hay un error de red o se alcanza un límite, el comando termina con código 2 y no presenta un resultado parcial como inventario completo. El modo por defecto sigue siendo offline. Consultá [permisos, privacidad y límites](docs/github-provider.md) antes de habilitar la API.
 
 
 
