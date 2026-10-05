@@ -10,7 +10,7 @@ from .dependency_audit import report_json as dependency_report_json
 from .dependency_audit import report_markdown as dependency_report_markdown
 from .domain import RepositoryTarget
 from .github_provider import GitHubApiProvider, GitHubProviderError
-from .provider import EmptyProvider
+from .provider import EmptyProvider, GitHubSecurityProvider
 from .repository_scan import report_json as local_report_json
 from .repository_scan import report_markdown as local_report_markdown
 from .repository_scan import scan_repository
@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if dependency_report.status == "complete" else 2
 
     target = RepositoryTarget(args.owner, args.repo, args.base_branch)
+    provider: GitHubSecurityProvider
     if args.provider == "github":
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", args.token_env):
             sys.stderr.write("Invalid token environment variable name.\n")
