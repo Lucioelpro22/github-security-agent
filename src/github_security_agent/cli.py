@@ -65,9 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         dependency_renderer = (
-            dependency_report_json
-            if args.format == "json"
-            else dependency_report_markdown
+            dependency_report_json if args.format == "json" else dependency_report_markdown
         )
         sys.stdout.write(dependency_renderer(dependency_report))
         return 0 if dependency_report.status == "complete" else 2
