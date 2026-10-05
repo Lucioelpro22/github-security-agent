@@ -39,12 +39,21 @@ def report_json(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -
 
 
 def _markdown_cell(value: str) -> str:
-    return html.escape(value, quote=False).replace("|", r"\|").replace("\n", " ")
+    return (
+        html.escape(value, quote=False)
+        .replace("|", r"\|")
+        .replace("`", "&#96;")
+        .replace("[", "&#91;")
+        .replace("]", "&#93;")
+        .replace("*", "&#42;")
+        .replace("_", "&#95;")
+        .replace("\n", " ")
+    )
 
 
 def report_markdown(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -> str:
     rows = list(findings)
-    lines = [f"# Security report: \`{_markdown_cell(target.full_name)}\`", "", f"Open findings: **{len(rows)}**", ""]
+    lines = [f"# Security report: {_markdown_cell(target.full_name)}", "", f"Open findings: **{len(rows)}**", ""]
     if not rows:
         return "\n".join([*lines, "No findings returned by the read-only provider.", ""])
     lines.extend(["| Class | ID | Severity | Title |", "|---|---|---|---|"])
