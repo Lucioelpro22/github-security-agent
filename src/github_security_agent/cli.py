@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         provider = EmptyProvider()
     try:
         findings = scan(target, provider)
-    except GitHubProviderError as exc:
+    except (GitHubProviderError, ValueError) as exc:
         sys.stderr.write(f"GitHub scan incomplete: {exc}.\n")
         return 2
     if args.format == "json":
