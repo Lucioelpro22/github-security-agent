@@ -281,7 +281,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             except _LockfileLimitExceeded:
                 errors.append(f"{relative}: skipped by size limit")
                 incomplete = True
-            except (OSError, UnicodeError, ValueError, RecursionError):
+            except (OSError, ValueError, RecursionError):
                 errors.append(f"{relative}: could not safely parse lockfile")
                 incomplete = True
         if manifests >= MAX_LOCKFILES:
@@ -325,7 +325,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                                     summary if isinstance(summary, str) else "",
                                 )
                             )
-            except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as exc:
+            except (OSError, ValueError) as exc:
                 lookup = "incomplete"
                 errors.append(f"OSV lookup failed: {type(exc).__name__}")
     return DependencyReport(
