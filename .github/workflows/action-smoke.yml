@@ -32,7 +32,7 @@ jobs:
 
       - name: Run the action
         id: security-audit
-        uses: ./
+        uses: $/
         with:
           path: .
           query-osv: "false"
