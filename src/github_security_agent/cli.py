@@ -3,6 +3,10 @@
 import argparse
 import sys
 
+from .dependency_audit import audit_dependencies
+from .dependency_audit import report_json as dependency_report_json
+from .dependency_audit import report_markdown as dependency_report_markdown
+
 from .domain import RepositoryTarget
 from .provider import EmptyProvider
 from .repository_scan import report_json as local_report_json
@@ -24,6 +28,17 @@ def build_parser() -> argparse.ArgumentParser:
     local_parser = sub.add_parser("scan-local", help="scan a local repository without executing it")
     local_parser.add_argument("path", nargs="?", default=".")
     local_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+
+    dependency_parser = sub.add_parser(
+        "audit-dependencies", help="inventory lockfiles and optionally query OSV.dev"
+    )
+    dependency_parser.add_argument("path", nargs="?", default=".")
+    dependency_parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    dependency_parser.add_argument(
+        "--query-osv",
+        action="store_true",
+        help="send package names, ecosystems, and exact versions to OSV.dev",
+    )
     return parser
 
 
@@ -38,6 +53,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         renderer = local_report_json if args.format == "json" else local_report_markdown
+        sys.stdout.write(renderer(report))
+        return 0 if report.status == "complete" else 2
+
+    if args.command == "audit-dependencies":
+        try:
+            report = audit_dependencies(args.path, query_osv=args.query_osv)
+        except (OSError, ValueError):
+            sys.stderr.write(
+                "Unable to audit the selected path. Check that it is a readable directory.\\n"
+            )
+            return 2
+        renderer = dependency_report_json if args.format == "json" else dependency_report_markdown
         sys.stdout.write(renderer(report))
         return 0 if report.status == "complete" else 2
 
