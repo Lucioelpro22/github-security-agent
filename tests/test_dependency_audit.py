@@ -1,5 +1,6 @@
 import json
 import os
+import os
 
 import pytest
 
@@ -244,7 +245,7 @@ def test_fifo_lockfile_is_skipped_without_blocking(tmp_path):
 def test_dependency_limit_is_applied_during_requirements_parsing(tmp_path, monkeypatch):
     monkeypatch.setattr(audit, "MAX_DEPENDENCIES", 5)
     (tmp_path / "requirements.txt").write_text(
-        "".join(f"package-{index}==1.0.0\\n" for index in range(7)),
+        "".join(f"package-{index}==1.0.0\n" for index in range(7)),
         encoding="utf-8",
     )
 
@@ -267,3 +268,49 @@ def test_directory_traversal_error_marks_report_incomplete(tmp_path, monkeypatch
 
     assert report.status == "incomplete"
     assert report.errors == ("restricted: could not enumerate directory",)
+
+
+
+def test_lockfile_limit_marks_report_incomplete(tmp_path, monkeypatch):
+    monkeypatch.setattr(audit, "MAX_LOCKFILES", 1)
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\\n", encoding="utf-8")
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\\nname = "serde"\\nversion = "1.0.0"\\n', encoding="utf-8"
+    )
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "incomplete"
+    assert report.manifests_scanned == 1
+    assert "lockfile count reached configured limit" in report.errors
+
+
+def test_osv_skips_secret_like_package_names(tmp_path, monkeypatch):
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps({"packages": {"node_modules/github_pat_abcd": {"version": "1.2.3"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        audit.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network request was sent")),
+    )
+
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+
+    assert report.status == "incomplete"
+    assert report.advisory_lookup == "incomplete"
+    assert any("invalid package identifiers" in item for item in report.errors)
+
+
+def test_osv_request_payload_has_a_byte_limit(monkeypatch):
+    monkeypatch.setattr(audit, "MAX_REQUEST_BYTES", 1)
+    monkeypatch.setattr(
+        audit.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network request was sent")),
+    )
+    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt")
+
+    with pytest.raises(ValueError, match="request exceeded"):
+        audit._post_osv_batch([dependency])
