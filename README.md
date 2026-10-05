@@ -44,7 +44,7 @@ La consulta envía únicamente nombre, ecosistema y versión exacta de cada depe
 
 ## GitHub Action opcional
 
-La acción de la raíz del repositorio ejecuta el escaneo local y el inventario de dependencias, y sube únicamente los informes Markdown y JSON como artefacto de siete días. Primero hacé checkout del repositorio que querés analizar. Usá una referencia inmutable revisada o un release al consumirla; no uses `@main` en workflows de producción.
+La acción de la raíz del repositorio ejecuta el escaneo local y el inventario de dependencias, y sube únicamente sus informes Markdown/JSON como artefacto de siete días, aislado en un directorio temporal por ejecución. El parámetro `path` debe apuntar a un directorio existente dentro del workspace. Primero hacé checkout del repositorio que querés analizar. Usá una referencia inmutable revisada o un release al consumirla; no uses `@main` en workflows de producción.
 
 ```yaml
 name: Security report
@@ -71,7 +71,7 @@ jobs:
           fail-on-incomplete: "false"
 ```
 
-La consulta a OSV.dev sigue desactivada por defecto; activá `query-osv: "true"` solo si aceptás enviar identificadores de paquetes validados y versiones exactas. El Action no recibe un token de GitHub ni necesita permisos de escritura. Los hallazgos no fallan el pipeline; `fail-on-incomplete: "true"` permite hacer fallar el job cuando un informe queda incompleto. El artefacto puede incluir rutas, nombres de paquetes y avisos; su acceso depende de los permisos del repositorio.
+La consulta a OSV.dev sigue desactivada por defecto; activá `query-osv: "true"` solo si aceptás enviar identificadores de paquetes validados y versiones exactas. El Action no recibe un token de GitHub ni necesita permisos de escritura. Los hallazgos no fallan el pipeline; `fail-on-incomplete: "true"` permite hacer fallar el job cuando un informe queda incompleto o no se puede subir el artefacto. El artefacto puede incluir rutas, nombres de paquetes y avisos; su acceso depende de los permisos del repositorio.
 
 ## Límites de seguridad
 
