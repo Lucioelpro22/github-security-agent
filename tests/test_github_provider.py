@@ -48,41 +48,41 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         assert request.get_header("X-GitHub-Api-Version") == "2022-11-28"
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse(
-            [
-                {
-                    "number": 1,
-                    "dependency": {"package": {"name": "demo-package"}},
-                    "security_advisory": {"summary": "Unsafe package"},
-                    "security_vulnerability": {
-                        "severity": "high",
-                        "first_patched_version": {"identifier": "2.0.0"},
-                    },
-                }
-            ]
-        )
+                [
+                    {
+                        "number": 1,
+                        "dependency": {"package": {"name": "demo-package"}},
+                        "security_advisory": {"summary": "Unsafe package"},
+                        "security_vulnerability": {
+                            "severity": "high",
+                            "first_patched_version": {"identifier": "2.0.0"},
+                        },
+                    }
+                ]
+            )
         if "/code-scanning/alerts" in request.full_url:
             return FakeResponse(
+                [
+                    {
+                        "number": 2,
+                        "rule": {
+                            "id": "py/unsafe",
+                            "description": "Unsafe flow",
+                            "security_severity_level": "critical",
+                        },
+                    }
+                ]
+            )
+        assert "hide_secret=true" in request.full_url
+        return FakeResponse(
             [
                 {
-                    "number": 2,
-                    "rule": {
-                        "id": "py/unsafe",
-                        "description": "Unsafe flow",
-                        "security_severity_level": "critical",
-                    },
+                    "number": 3,
+                    "secret_type_display_name": "GitHub token",
+                    "secret": "DO_NOT_EXPORT_LITERAL",
                 }
             ]
         )
-        assert "hide_secret=true" in request.full_url
-        return FakeResponse(
-        [
-            {
-                "number": 3,
-                "secret_type_display_name": "GitHub token",
-                "secret": "DO_NOT_EXPORT_LITERAL",
-            }
-        ]
-    )
 
     monkeypatch.setattr(
         "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
