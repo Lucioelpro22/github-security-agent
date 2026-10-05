@@ -46,9 +46,9 @@ runs:
         report_dir="$(mktemp -d "$RUNNER_TEMP/github-security-agent.XXXXXX")"
 
         if ! python -c 'import os,sys; workspace=os.path.realpath(os.environ["GITHUB_WORKSPACE"]); target=os.path.realpath(sys.argv[1]); sys.exit(0 if os.path.commonpath([workspace,target]) == workspace and os.path.isdir(target) else 1)' "$SCAN_PATH" >/dev/null 2>&1; then
-          printf '%s\\n' '# Repository scan' '' '- Status: **incomplete**' '- Error: path must be an existing directory inside the checked-out workspace.' > "$report_dir/repository-scan.md"
-          printf '%s\\n' '{"root":".","status":"incomplete","files_scanned":0,"files_skipped":0,"findings":[]}' > "$report_dir/repository-scan.json"
-          printf '%s\\n' '{"status":"incomplete","manifests_scanned":0,"dependencies":[],"advisories":[],"advisory_lookup":"not_requested","errors":["path must be an existing directory inside the checked-out workspace"]}' > "$report_dir/dependency-audit.json"
+          printf '%s\n' '# Repository scan' '' '- Status: **incomplete**' '- Error: path must be an existing directory inside the checked-out workspace.' > "$report_dir/repository-scan.md"
+          printf '%s\n' '{"root":".","status":"incomplete","files_scanned":0,"files_skipped":0,"findings":[]}' > "$report_dir/repository-scan.json"
+          printf '%s\n' '{"status":"incomplete","manifests_scanned":0,"dependencies":[],"advisories":[],"advisory_lookup":"not_requested","errors":["path must be an existing directory inside the checked-out workspace"]}' > "$report_dir/dependency-audit.json"
           scan_status=2
           dependency_status=2
         else
