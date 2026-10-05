@@ -19,7 +19,7 @@ MAX_RESPONSE_BYTES = 2_000_000
 PER_PAGE = 100
 MAX_PAGES_PER_ALERT_CLASS = 10
 _OWNER_OR_REPO = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
-_NEXT_REL = re.compile(r"(?:^|;)\s*rel\s*=\s*"?next"?(?:\s*;|\s*$)", re.IGNORECASE)
+_NEXT_REL = re.compile(r'(?:^|;)\\s*rel\\s*=\\s*\"?next\"?(?:\\s*;|\\s*$)', re.IGNORECASE)
 _LINK_TARGET = re.compile(r"<([^>]+)>")
 
 
