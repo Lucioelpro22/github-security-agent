@@ -1,0 +1,40 @@
+name: Action smoke test
+
+on:
+  pull_request:
+    paths:
+      - action.yml
+      - .github/workflows/action-smoke.yml
+      - README.md
+      - docs/**
+      - src/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Run local action without network lookup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the action
+        id: security-audit
+        uses: ./
+        with:
+          path: .
+          query-osv: "false"
+          fail-on-incomplete: "false"
+          artifact-name: github-security-agent-smoke
