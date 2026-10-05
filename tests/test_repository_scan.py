@@ -130,7 +130,7 @@ def test_single_file_findings_stop_at_the_configured_limit(tmp_path, monkeypatch
 
     monkeypatch.setattr(repository_scan, "MAX_FINDINGS", 2)
     token = "github_pat_" + "D" * 40
-    (tmp_path / "many.txt").write_text((token + "\\n") * 1000, encoding="utf-8")
+    (tmp_path / "many.txt").write_text((token + "\n) * 1000, encoding="utf-8")
 
     report = repository_scan.scan_repository(tmp_path)
 
