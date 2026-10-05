@@ -47,7 +47,8 @@ def test_github_provider_uses_environment_token_and_keeps_default_offline(
     requests = []
 
     class Response:
-        headers = {}
+        def __init__(self):
+            self.headers = {}
 
         def __enter__(self):
             return self
