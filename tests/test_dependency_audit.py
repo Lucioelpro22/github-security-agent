@@ -1,6 +1,5 @@
 import json
 import os
-import os
 
 import pytest
 
@@ -273,9 +272,9 @@ def test_directory_traversal_error_marks_report_incomplete(tmp_path, monkeypatch
 
 def test_lockfile_limit_marks_report_incomplete(tmp_path, monkeypatch):
     monkeypatch.setattr(audit, "MAX_LOCKFILES", 1)
-    (tmp_path / "requirements.txt").write_text("requests==2.31.0\\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
     (tmp_path / "Cargo.lock").write_text(
-        '[[package]]\\nname = "serde"\\nversion = "1.0.0"\\n', encoding="utf-8"
+        '[[package]]\nname = "serde"\nversion = "1.0.0"\n', encoding="utf-8"
     )
 
     report = audit.audit_dependencies(tmp_path)
