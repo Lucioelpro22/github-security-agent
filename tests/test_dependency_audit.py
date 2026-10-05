@@ -320,3 +320,14 @@ def test_osv_identifier_validation_rejects_secret_like_versions():
     dependency = audit.Dependency("requests", "ghp_privatecredential", "PyPI", "requirements.txt")
 
     assert not audit._is_safe_osv_query(dependency)
+
+
+
+def test_exact_lockfile_limit_without_additional_lockfiles_is_complete(tmp_path, monkeypatch):
+    monkeypatch.setattr(audit, "MAX_LOCKFILES", 1)
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\\n", encoding="utf-8")
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "complete"
+    assert report.manifests_scanned == 1
