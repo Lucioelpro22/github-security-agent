@@ -42,6 +42,37 @@ github-security-agent audit-dependencies . --query-osv --format markdown
 
 La consulta envía únicamente nombre, ecosistema y versión exacta de cada dependencia; no envía archivos ni código fuente. Los lockfiles no compatibles, las especificaciones sin versión exacta y los manifiestos no reconocidos se omiten. El recorrido tiene límites de tamaño y cantidad; cualquier error de lectura, parseo o consulta aparece en el informe y marca el estado como incompleto. Los resultados de OSV.dev son orientativos y deben verificarse en la fuente antes de remediar.
 
+## GitHub Action opcional
+
+La acción de la raíz del repositorio ejecuta el escaneo local y el inventario de dependencias, y sube únicamente sus informes Markdown/JSON como artefacto de siete días, aislado en un directorio temporal por ejecución. El parámetro `path` debe apuntar a un directorio existente dentro del workspace. Primero hacé checkout del repositorio que querés analizar. Usá una referencia inmutable revisada o un release al consumirla; no uses `@main` en workflows de producción.
+
+```yaml
+name: Security report
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  security-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Lucioelpro22/github-security-agent@<reviewed-commit-sha>
+        with:
+          path: .
+          query-osv: "false"
+          fail-on-incomplete: "false"
+```
+
+La consulta a OSV.dev sigue desactivada por defecto; activá `query-osv: "true"` solo si aceptás enviar identificadores de paquetes validados y versiones exactas. El Action no recibe un token de GitHub ni necesita permisos de escritura. Los hallazgos no fallan el pipeline; `fail-on-incomplete: "true"` permite hacer fallar el job cuando un informe queda incompleto o no se puede subir el artefacto. El artefacto puede incluir rutas, nombres de paquetes y avisos; su acceso depende de los permisos del repositorio.
+
 ## Límites de seguridad
 
 - `scan`, `plan` y `scan-local` son operaciones de solo lectura.
