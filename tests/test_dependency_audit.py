@@ -20,10 +20,15 @@ def test_inventory_is_local_and_parses_exact_requirements(tmp_path, monkeypatch)
 
 def test_parses_npm_and_toml_lockfiles(tmp_path):
     (tmp_path / "package-lock.json").write_text(
-        json.dumps({"lockfileVersion": 3, "packages": {
-            "": {"name": "demo", "version": "1.0.0"},
-            "node_modules/left-pad": {"version": "1.3.0"},
-        }}),
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "demo", "version": "1.0.0"},
+                    "node_modules/left-pad": {"version": "1.3.0"},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "Cargo.lock").write_text(
@@ -34,13 +39,18 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
 
     assert report.manifests_scanned == 2
     assert {(item.name, item.ecosystem) for item in report.dependencies} == {
-        ("left-pad", "npm"), ("serde", "crates.io")
+        ("left-pad", "npm"),
+        ("serde", "crates.io"),
     }
 
 
 def test_osv_is_explicit_and_advisories_are_attached_to_exact_versions(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
-    monkeypatch.setattr(audit, "_post_osv_batch", lambda batch: [[{"id": "GHSA-test", "summary": "Example issue"}]])
+    monkeypatch.setattr(
+        audit,
+        "_post_osv_batch",
+        lambda batch: [[{"id": "GHSA-test", "summary": "Example issue"}]],
+    )
 
     report = audit.audit_dependencies(tmp_path, query_osv=True)
 
