@@ -1,6 +1,10 @@
 import json
 
-from repository_scan import report_json, report_markdown, scan_repository
+from github_security_agent.repository_scan import (
+    report_json,
+    report_markdown,
+    scan_repository,
+)
 
 
 def test_detects_workflow_risks_and_orders_findings(tmp_path):
@@ -53,7 +57,7 @@ def test_skips_symlinks_and_does_not_scan_outside_root(tmp_path):
 
 
 def test_oversized_and_invalid_utf8_files_make_scan_incomplete(tmp_path, monkeypatch):
-    import repository_scan
+    import github_security_agent.repository_scan as repository_scan
 
     monkeypatch.setattr(repository_scan, "MAX_FILE_BYTES", 4)
     (tmp_path / "large.txt").write_text("12345", encoding="utf-8")
