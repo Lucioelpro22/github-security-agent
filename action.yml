@@ -1,0 +1,89 @@
+name: GitHub Security Agent
+description: Run bounded, read-only repository and dependency audits and upload reports.
+inputs:
+  path:
+    description: Existing directory to audit, constrained to the checked-out workspace.
+    required: false
+    default: .
+  query-osv:
+    description: Explicitly send validated package names, ecosystems, and exact versions to OSV.dev.
+    required: false
+    default: "false"
+  fail-on-incomplete:
+    description: Fail the job when either audit or report upload is incomplete. Findings alone never fail the job.
+    required: false
+    default: "false"
+  artifact-name:
+    description: Name of the uploaded report artifact.
+    required: false
+    default: github-security-agent-report
+outputs:
+  scan-status:
+    description: Exit status from the local repository scan.
+    value: ${{ steps.scan.outputs.scan_status }}
+  dependency-status:
+    description: Exit status from the dependency audit.
+    value: ${{ steps.scan.outputs.dependency_status }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.12"
+      continue-on-error: ${{ inputs.fail-on-incomplete != 'true' }}
+
+    - name: Run read-only audits
+      id: scan
+      shell: bash
+      continue-on-error: ${{ inputs.fail-on-incomplete != 'true' }}
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        QUERY_OSV: ${{ inputs.query-osv }}
+      run: |
+        scan_status=0
+        dependency_status=0
+        report_dir="$(mktemp -d "$RUNNER_TEMP/github-security-agent.XXXXXX")"
+
+        if ! python -c 'import os,sys; workspace=os.path.realpath(os.environ["GITHUB_WORKSPACE"]); target=os.path.realpath(sys.argv[1]); sys.exit(0 if os.path.commonpath([workspace,target]) == workspace and os.path.isdir(target) else 1)' "$SCAN_PATH" >/dev/null 2>&1; then
+          printf '%s\n' '# Repository scan' '' '- Status: **incomplete**' '- Error: path must be an existing directory inside the checked-out workspace.' > "$report_dir/repository-scan.md"
+          printf '%s\n' '{"root":".","status":"incomplete","files_scanned":0,"files_skipped":0,"findings":[]}' > "$report_dir/repository-scan.json"
+          printf '%s\n' '{"status":"incomplete","manifests_scanned":0,"dependencies":[],"advisories":[],"advisory_lookup":"not_requested","errors":["path must be an existing directory inside the checked-out workspace"]}' > "$report_dir/dependency-audit.json"
+          scan_status=2
+          dependency_status=2
+        else
+          python -c 'import os,sys; sys.path.insert(0, os.path.join(os.environ["GITHUB_ACTION_PATH"], "src")); from github_security_agent.cli import main; sys.exit(main(sys.argv[1:]))' scan-local "$SCAN_PATH" --format markdown > "$report_dir/repository-scan.md" || scan_status=$?
+
+          dependency_args=(audit-dependencies "$SCAN_PATH" --format json)
+          if [[ "$QUERY_OSV" == "true" ]]; then
+            dependency_args+=(--query-osv)
+          fi
+          python -c 'import os,sys; sys.path.insert(0, os.path.join(os.environ["GITHUB_ACTION_PATH"], "src")); from github_security_agent.cli import main; sys.exit(main(sys.argv[1:]))' "${dependency_args[@]}" > "$report_dir/dependency-audit.json" || dependency_status=$?
+        fi
+
+        {
+          echo "scan_status=$scan_status"
+          echo "dependency_status=$dependency_status"
+          echo "report_dir=$report_dir"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Upload reports
+      id: upload
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      continue-on-error: ${{ inputs.fail-on-incomplete != 'true' }}
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ steps.scan.outputs.report_dir }}/repository-scan.md
+          ${{ steps.scan.outputs.report_dir }}/repository-scan.json
+          ${{ steps.scan.outputs.report_dir }}/dependency-audit.json
+        if-no-files-found: error
+        retention-days: 7
+
+    - name: Enforce strict completeness when requested
+      if: ${{ inputs.fail-on-incomplete == 'true' && (steps.scan.outputs.scan_status != '0' || steps.scan.outputs.dependency_status != '0' || steps.upload.outcome != 'success') }}
+      shell: bash
+      run: |
+        echo "One or more reports are incomplete. Review the action logs and uploaded artifact."
+        exit 1
