@@ -48,7 +48,9 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         assert request.get_header("X-GitHub-Api-Version") == "2022-11-28"
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse(
-            [                {
+            [
+
+                {
                     "number": 1,
                     "dependency": {"package": {"name": "demo-package"}},
                     "security_advisory": {"summary": "Unsafe package"},
@@ -61,7 +63,9 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         )
         if "/code-scanning/alerts" in request.full_url:
             return FakeResponse(
-            [                {
+            [
+
+                {
                     "number": 2,
                     "rule": {
                         "id": "py/unsafe",
@@ -73,7 +77,9 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         )
         assert "hide_secret=true" in request.full_url
         return FakeResponse(
-        [            {
+        [
+
+            {
                 "number": 3,
                 "secret_type_display_name": "GitHub token",
                 "secret": "DO_NOT_EXPORT_LITERAL",
