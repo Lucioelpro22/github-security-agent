@@ -61,7 +61,7 @@ class GitHubApiProvider:
                 if not isinstance(item, dict):
                     raise GitHubProviderError("GitHub returned an unexpected alert response")
                 findings.append(_normalize_alert(target, alert_class, item))
-            next_url = _next_url(link_header, endpoint)
+            next_url = _next_url(link_header, endpoint, expected_page=page_number + 1)
             if next_url is None:
                 return findings
             if page_number == MAX_PAGES_PER_ALERT_CLASS:
@@ -122,7 +122,7 @@ def _page_url(endpoint: str, page: int) -> str:
     return f"{API_BASE}{endpoint}{separator}per_page={PER_PAGE}&page={page}"
 
 
-def _next_url(link_header: str | None, endpoint: str) -> str | None:
+def _next_url(link_header: str | None, endpoint: str, *, expected_page: int) -> str | None:
     if not link_header:
         return None
     next_url = None
@@ -143,7 +143,8 @@ def _next_url(link_header: str | None, endpoint: str) -> str | None:
         or query.get("state") != ["open"]
         or query.get("per_page") != [str(PER_PAGE)]
         or len(query.get("page", [])) != 1
-        or not query["page"][0].isdigit()
+        or query["page"][0] != str(expected_page)
+        or ("hide_secret=true" in endpoint and query.get("hide_secret") != ["true"])
     ):
         raise GitHubProviderError("GitHub returned an unexpected pagination link")
     return next_url
