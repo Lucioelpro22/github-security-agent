@@ -122,7 +122,7 @@ def _findings_for(
                 return findings, True
         if not workflow or line.lstrip().startswith("#"):
             continue
-        if re.match(r"^\\s*permissions\\s*:\\s*write-all\\b", line, re.IGNORECASE):
+        if re.match(r"^\s*permissions\s*:\s*write-all\b", line, re.IGNORECASE):
             findings.append(
                 Finding(
                     "workflow.permissions_write_all",
@@ -136,7 +136,7 @@ def _findings_for(
             )
             if len(findings) >= max_findings:
                 return findings, True
-        if re.search(r"\\bpull_request_target\\s*:", line):
+        if re.search(r"\bpull_request_target\s*:", line):
             findings.append(
                 Finding(
                     "workflow.pull_request_target",
