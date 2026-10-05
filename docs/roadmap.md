@@ -1,6 +1,10 @@
 # Roadmap
 
-1. Stabilize the offline domain and report contracts.
-2. Add a GitHub provider with explicit allow-lists, pagination, timeouts, rate-limit handling, and minimal scopes.
-3. Add SARIF/JSON/Markdown reports and evidence links without sensitive payloads.
-4. Add human-approved remediation plans; automatic writes remain disabled until an independent review.
+1. Stabilize offline domain objects and deterministic report contracts.
+2. Implement local, read-only repository scanning with fixture-based tests; parse files as untrusted data and never execute repository code.
+3. Add first detectors for GitHub Actions workflow risks, unsafe repository configuration, and redacted secret-pattern matches.
+4. Add optional dependency advisory scanning and JSON/Markdown output with confidence, evidence, exclusions, and scan status.
+5. Package an opt-in GitHub Action with least-privilege permissions and downloadable reports; keep CI non-blocking by default.
+6. Consider a GitHub API provider and dashboard only after the local scanner is reliable and independently reviewed.
+
+Automatic fixes, merges, alert dismissal, and secret rotation remain out of scope. Any future write capability requires explicit human approval and a separate security review.
