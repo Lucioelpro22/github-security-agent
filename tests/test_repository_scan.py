@@ -171,3 +171,13 @@ def test_detects_explicit_root_user_in_dockerfile(tmp_path):
     assert [finding.rule_id for finding in report.findings] == [
         "container.dockerfile_root_user"
     ]
+
+def test_detects_privileged_settings_in_json_container_config(tmp_path):
+    config = tmp_path / "compose.json"
+    config.write_text('{"privileged": true, "runAsUser": 0}', encoding="utf-8")
+
+    report = scan_repository(tmp_path)
+    assert [finding.rule_id for finding in report.findings] == [
+        "container.privileged_mode",
+        "container.run_as_root",
+    ]
