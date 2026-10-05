@@ -260,7 +260,11 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             except (OSError, UnicodeError, ValueError, RecursionError):
                 errors.append(f"{relative}: could not safely parse lockfile")
                 incomplete = True
-        if manifests >= MAX_LOCKFILES or limit_reached:
+        if manifests >= MAX_LOCKFILES:
+            errors.append("lockfile count reached configured limit")
+            incomplete = True
+            break
+        if limit_reached:
             break
 
     unique = {(d.ecosystem, d.name, d.version, d.manifest): d for d in dependencies}
