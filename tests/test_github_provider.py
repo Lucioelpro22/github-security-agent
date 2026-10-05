@@ -109,10 +109,8 @@ def test_provider_follows_only_same_origin_next_pages(monkeypatch):
 
     def fake_urlopen(request, timeout):
         seen.append(request.full_url)
-        if (
-            "/dependabot/alerts" in request.full_url
-            and urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query).get("page") == ["1"]
-        ):
+        page = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query).get("page")
+        if "/dependabot/alerts" in request.full_url and page == ["1"]:
             return FakeResponse(
                 [{"number": 1, "security_advisory": {"summary": "First"}}],
                 '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&page=2>; type="application/json"; rel="next"',
