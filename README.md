@@ -23,6 +23,25 @@ El comando `scan-local` analiza el directorio local como datos: no ejecuta scrip
 
 Sin credenciales, la integración remota sigue usando un proveedor offline vacío. La integración real de GitHub se incorporará detrás de la interfaz del proveedor, con permisos mínimos y aprobación humana.
 
+
+
+## Auditoría opcional de dependencias
+
+El comando `audit-dependencies` crea un inventario local desde `requirements.txt` (versiones exactas `==`), `package-lock.json`, `npm-shrinkwrap.json`, `poetry.lock` y `Cargo.lock`. No instala paquetes, ejecuta scripts ni consulta la red por defecto:
+
+```bash
+github-security-agent audit-dependencies . --format markdown
+github-security-agent audit-dependencies . --format json
+```
+
+Para consultar avisos de OSV.dev, habilitá explícitamente la consulta:
+
+```bash
+github-security-agent audit-dependencies . --query-osv --format markdown
+```
+
+La consulta envía únicamente nombre, ecosistema y versión exacta de cada dependencia; no envía archivos ni código fuente. Los lockfiles no compatibles, las especificaciones sin versión exacta y los manifiestos no reconocidos se omiten. El recorrido tiene límites de tamaño y cantidad; cualquier error de lectura, parseo o consulta aparece en el informe y marca el estado como incompleto. Los resultados de OSV.dev son orientativos y deben verificarse en la fuente antes de remediar.
+
 ## Límites de seguridad
 
 - `scan`, `plan` y `scan-local` son operaciones de solo lectura.

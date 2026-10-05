@@ -12,6 +12,9 @@ license = { file = "LICENSE" }
 authors = [{ name = "Luciano Leal" }]
 dependencies = []
 
+[project.scripts]
+github-security-agent = "github_security_agent.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=9.1.1,<10",
