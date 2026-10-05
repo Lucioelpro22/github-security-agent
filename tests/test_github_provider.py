@@ -45,9 +45,8 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         assert timeout == 10
         assert request.get_method() == "GET"
         assert request.get_header("Authorization") == f"Bearer {TOKEN}"
-        assert dict((key.lower(), value) for key, value in request.header_items())[
-            "x-github-api-version"
-        ] == "2022-11-28"
+        request_headers = {key.lower(): value for key, value in request.header_items()}
+        assert request_headers["x-github-api-version"] == "2022-11-28"
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse(
                 [
