@@ -18,7 +18,7 @@ El comando `scan-local` analiza el directorio local como datos: no ejecuta scrip
 - Detecta algunos formatos conocidos de tokens y asignaciones de credenciales; nunca imprime el valor detectado.
 - Señala permisos `write-all`, el evento `pull_request_target` y acciones de terceros que no estén fijadas a un SHA completo.
 - Los controles de workflows son heurísticos basados en texto, no una validación semántica de YAML. Revisá los hallazgos y posibles falsos positivos.
-- El recorrido no sigue enlaces simbólicos, omite directorios comunes de dependencias/caché y archivos binarios/no UTF-8, limita cada lectura a 1 MB, el total a 25 MB, los archivos a 10.000 y los hallazgos a 5.000. Los topes de hallazgos y lectura se aplican durante el análisis; si se alcanza un límite, el reporte queda incompleto.
+- El recorrido omite enlaces simbólicos detectados, directorios comunes de dependencias/caché y archivos binarios/no UTF-8. Abre archivos evitando enlaces simbólicos en el último componente cuando la plataforma ofrece `O_NOFOLLOW`, y verifica que el descriptor sea un archivo regular. Cada lectura se limita a 1 MB, el total a 25 MB, los archivos a 10.000 y los hallazgos a 5.000. Los topes de hallazgos y lectura se aplican durante el análisis; si se alcanza un límite, el reporte queda incompleto.
 
 Sin credenciales, la integración remota sigue usando un proveedor offline vacío. La integración real de GitHub se incorporará detrás de la interfaz del proveedor, con permisos mínimos y aprobación humana.
 
