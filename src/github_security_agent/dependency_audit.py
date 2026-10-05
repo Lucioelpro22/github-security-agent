@@ -30,6 +30,11 @@ MAX_RESPONSE_BYTES = 2_000_000
 MAX_SCAN_SECONDS = 30
 OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
+_SAFE_UNSCOPED_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
+_SAFE_SCOPED_NAME = re.compile(r"^@[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$")
+_SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+!_-]{0,127}$")
+MAX_REQUEST_BYTES = 64_000
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,16 +167,34 @@ def _read_bounded_lockfile(path: Path, remaining_bytes: int) -> str:
     return data.decode("utf-8")
 
 
+def _is_safe_osv_query(dependency: Dependency) -> bool:
+    valid_name = bool(
+        _SAFE_SCOPED_NAME.fullmatch(dependency.name)
+        if dependency.name.startswith("@")
+        else _SAFE_UNSCOPED_NAME.fullmatch(dependency.name)
+    )
+    return (
+        dependency.ecosystem in {"PyPI", "npm", "crates.io"}
+        and valid_name
+        and bool(_SAFE_VERSION.fullmatch(dependency.version))
+    )
+
+
 def _post_osv_batch(dependencies: list[Dependency]) -> list[list[dict[str, Any]]]:
+    if any(not _is_safe_osv_query(item) for item in dependencies):
+        raise ValueError("OSV query contains an invalid package identifier")
     payload = {
         "queries": [
             {"package": {"name": item.name, "ecosystem": item.ecosystem}, "version": item.version}
             for item in dependencies
         ]
     }
+    payload_bytes = json.dumps(payload).encode("utf-8")
+    if len(payload_bytes) > MAX_REQUEST_BYTES:
+        raise ValueError("OSV request exceeded the configured size limit")
     request = urllib.request.Request(
         OSV_QUERY_URL,
-        data=json.dumps(payload).encode("utf-8"),
+        data=payload_bytes,
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
@@ -281,9 +304,16 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             errors.append(f"OSV lookup limited to the first {max_queried} dependencies")
         for offset in range(0, min(len(dependencies), max_queried), MAX_BATCH_SIZE):
             batch = dependencies[offset : offset + MAX_BATCH_SIZE]
+            safe_batch = [item for item in batch if _is_safe_osv_query(item)]
+            if len(safe_batch) != len(batch):
+                skipped = len(batch) - len(safe_batch)
+                lookup = "incomplete"
+                errors.append(f"OSV lookup skipped {skipped} invalid package identifiers")
+            if not safe_batch:
+                continue
             try:
-                results = _post_osv_batch(batch)
-                for dependency, vulns in zip(batch, results, strict=True):
+                results = _post_osv_batch(safe_batch)
+                for dependency, vulns in zip(safe_batch, results, strict=True):
                     for vuln in vulns:
                         if isinstance(vuln, dict) and isinstance(vuln.get("id"), str):
                             summary = vuln.get("summary")
