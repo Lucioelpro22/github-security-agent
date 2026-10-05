@@ -143,8 +143,14 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     base = Path(root).resolve(strict=True)
     if not base.is_dir():
         raise ValueError("audit root must be a directory")
-    supported = {"requirements.txt", "requirements-lock.txt", "package-lock.json",
-                 "npm-shrinkwrap.json", "poetry.lock", "Cargo.lock"}
+    supported = {
+        "requirements.txt",
+        "requirements-lock.txt",
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "poetry.lock",
+        "Cargo.lock",
+    }
     dependencies: list[Dependency] = []
     errors: list[str] = []
     manifests = 0
@@ -156,8 +162,12 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             errors.append("scan time limit reached")
             incomplete = True
             break
-        dirs[:] = sorted(name for name in dirs if name not in {".git", ".venv", "venv", "node_modules"}
-                         and not (Path(current) / name).is_symlink())
+        dirs[:] = sorted(
+            name
+            for name in dirs
+            if name not in {".git", ".venv", "venv", "node_modules"}
+            and not (Path(current) / name).is_symlink()
+        )
         for name in sorted(files):
             if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
                 errors.append("scan time limit reached")
@@ -199,7 +209,9 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             break
 
     unique = {(d.ecosystem, d.name, d.version, d.manifest): d for d in dependencies}
-    dependencies = sorted(unique.values(), key=lambda d: (d.ecosystem, d.name.lower(), d.version, d.manifest))
+    dependencies = sorted(
+        unique.values(), key=lambda d: (d.ecosystem, d.name.lower(), d.version, d.manifest)
+    )
     advisories: list[Advisory] = []
     lookup = "not_requested"
     if query_osv:
@@ -209,19 +221,31 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             lookup = "incomplete"
             errors.append(f"OSV lookup limited to the first {max_queried} dependencies")
         for offset in range(0, min(len(dependencies), max_queried), MAX_BATCH_SIZE):
-            batch = dependencies[offset:offset + MAX_BATCH_SIZE]
+            batch = dependencies[offset : offset + MAX_BATCH_SIZE]
             try:
                 results = _post_osv_batch(batch)
                 for dependency, vulns in zip(batch, results, strict=True):
                     for vuln in vulns:
                         if isinstance(vuln, dict) and isinstance(vuln.get("id"), str):
                             summary = vuln.get("summary")
-                            advisories.append(Advisory(dependency, vuln["id"], summary if isinstance(summary, str) else ""))
+                            advisories.append(
+                                Advisory(
+                                    dependency,
+                                    vuln["id"],
+                                    summary if isinstance(summary, str) else "",
+                                )
+                            )
             except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as exc:
                 lookup = "incomplete"
                 errors.append(f"OSV lookup failed: {type(exc).__name__}")
-    return DependencyReport("incomplete" if incomplete or lookup == "incomplete" else "complete",
-                            manifests, tuple(dependencies), tuple(advisories), lookup, tuple(errors))
+    return DependencyReport(
+        "incomplete" if incomplete or lookup == "incomplete" else "complete",
+        manifests,
+        tuple(dependencies),
+        tuple(advisories),
+        lookup,
+        tuple(errors),
+    )
 
 
 def report_json(report: DependencyReport) -> str:
@@ -229,13 +253,21 @@ def report_json(report: DependencyReport) -> str:
 
 
 def report_markdown(report: DependencyReport) -> str:
-    lines = ["# Dependency audit", "", f"- Status: **{report.status}**",
-             f"- Lockfiles scanned: **{report.manifests_scanned}**",
-             f"- Dependencies inventoried: **{len(report.dependencies)}**",
-             f"- OSV lookup: **{report.advisory_lookup}**",
-             f"- Advisories: **{len(report.advisories)}**", ""]
+    lines = [
+        "# Dependency audit",
+        "",
+        f"- Status: **{report.status}**",
+        f"- Lockfiles scanned: **{report.manifests_scanned}**",
+        f"- Dependencies inventoried: **{len(report.dependencies)}**",
+        f"- OSV lookup: **{report.advisory_lookup}**",
+        f"- Advisories: **{len(report.advisories)}**",
+        "",
+    ]
     if report.advisories:
-        lines += ["| Advisory | Package | Version | Ecosystem | Lockfile | Summary |", "|---|---|---|---|---|---|"]
+        lines += [
+            "| Advisory | Package | Version | Ecosystem | Lockfile | Summary |",
+            "|---|---|---|---|---|---|",
+        ]
         for item in report.advisories:
             d = item.dependency
             cells = (item.advisory_id, d.name, d.version, d.ecosystem, d.manifest, item.summary)
@@ -253,5 +285,9 @@ def report_markdown(report: DependencyReport) -> str:
             lines.append("No advisories checked. Run with --query-osv to query OSV.dev.")
     if report.errors:
         lines += ["", "## Incomplete items", *[f"- {item}" for item in report.errors]]
-    lines += ["", "Advisory lookup is best-effort; verify results against the upstream advisory before remediation.", ""]
+    lines += [
+        "",
+        "Advisory lookup is best-effort; verify results against the upstream advisory before remediation.",
+        "",
+    ]
     return "\n".join(lines)
