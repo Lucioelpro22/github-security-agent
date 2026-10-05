@@ -32,10 +32,9 @@ OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
 _SAFE_UNSCOPED_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 _SAFE_SCOPED_NAME = re.compile(r"^@[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$")
-_SAFE_VERSION = re.compile(r"^v?\\d[A-Za-z0-9.+!_-]{0,127}$")
-_SENSITIVE_NAME = re.compile(r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\\b|xox[baprs]-|sk-[a-z0-9_-]{20,})")
+_SAFE_VERSION = re.compile(r"^v?\d[A-Za-z0-9.+!_-]{0,127}$")
+_SENSITIVE_NAME = re.compile(r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\b|xox[baprs]-|sk-[a-z0-9_-]{20,})")
 MAX_REQUEST_BYTES = 64_000
-
 
 
 @dataclass(frozen=True, slots=True)
