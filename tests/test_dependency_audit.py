@@ -313,3 +313,10 @@ def test_osv_request_payload_has_a_byte_limit(monkeypatch):
 
     with pytest.raises(ValueError, match="request exceeded"):
         audit._post_osv_batch([dependency])
+
+
+
+def test_osv_identifier_validation_rejects_secret_like_versions():
+    dependency = audit.Dependency("requests", "ghp_privatecredential", "PyPI", "requirements.txt")
+
+    assert not audit._is_safe_osv_query(dependency)
