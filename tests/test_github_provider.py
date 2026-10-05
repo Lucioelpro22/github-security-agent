@@ -6,7 +6,6 @@ import pytest
 
 from github_security_agent.domain import AlertClass, RepositoryTarget, Severity
 from github_security_agent.github_provider import (
-    MAX_PAGES_PER_ALERT_CLASS,
     GitHubApiProvider,
     GitHubProviderError,
     _next_url,
@@ -41,7 +40,7 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         assert timeout == 10
         assert request.get_method() == "GET"
         assert request.get_header("Authorization") == f"Bearer {TOKEN}"
-        assert request.get_header("X-github-api-version") == "2022-11-28"
+        assert request.get_header("X-GitHub-Api-Version") == "2022-11-28"
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse([
                 {
