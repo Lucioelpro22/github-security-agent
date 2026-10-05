@@ -8,7 +8,11 @@ def test_cli_json_is_read_only(capsys) -> None:
 
 def test_local_cli_outputs_redacted_json(tmp_path, capsys) -> None:
     canary = "github_pat_" + "B" * 40
-    (tmp_path / "settings.txt").write_text(f"ACCESS_TOKEN={canary}\\n", encoding="utf-8")
+    (tmp_path / "settings.txt").write_text(
+        f"ACCESS_TOKEN={canary}\n",
+        encoding="utf-8",
+    )
+
     assert main(["scan-local", str(tmp_path), "--format", "json"]) == 0
     output = capsys.readouterr().out
     assert '"status": "complete"' in output
