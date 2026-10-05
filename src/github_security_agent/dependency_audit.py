@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import tomllib
+import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -24,6 +26,7 @@ MAX_DEPENDENCIES = 5_000
 MAX_BATCH_SIZE = 100
 MAX_OSV_BATCHES = 5
 MAX_RESPONSE_BYTES = 2_000_000
+MAX_SCAN_SECONDS = 30
 OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
 
@@ -147,10 +150,19 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
     manifests = 0
     total_bytes = 0
     incomplete = False
-    for current, dirs, files in __import__("os").walk(base, followlinks=False):
+    started_at = time.monotonic()
+    for current, dirs, files in os.walk(base, followlinks=False):
+        if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
+            errors.append("scan time limit reached")
+            incomplete = True
+            break
         dirs[:] = sorted(name for name in dirs if name not in {".git", ".venv", "venv", "node_modules"}
                          and not (Path(current) / name).is_symlink())
         for name in sorted(files):
+            if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
+                errors.append("scan time limit reached")
+                incomplete = True
+                break
             path = Path(current) / name
             if name not in supported or path.is_symlink():
                 continue
@@ -168,7 +180,14 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 total_bytes += size
                 manifests += 1
                 dependencies.extend(_parse_lockfile(path, relative, text))
-            except (OSError, UnicodeError, ValueError, json.JSONDecodeError, tomllib.TOMLDecodeError):
+            except (
+                OSError,
+                UnicodeError,
+                ValueError,
+                json.JSONDecodeError,
+                tomllib.TOMLDecodeError,
+                RecursionError,
+            ):
                 errors.append(f"{relative}: could not parse lockfile")
                 incomplete = True
             if len(dependencies) > MAX_DEPENDENCIES:
