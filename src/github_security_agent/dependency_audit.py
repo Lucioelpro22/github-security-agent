@@ -261,7 +261,9 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             if name not in supported or path.is_symlink():
                 continue
             if manifests >= MAX_LOCKFILES:
+                errors.append("lockfile count reached configured limit")
                 incomplete = True
+                limit_reached = True
                 break
             relative = path.relative_to(base).as_posix()
             try:
@@ -284,10 +286,6 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             except (OSError, ValueError, RecursionError):
                 errors.append(f"{relative}: could not safely parse lockfile")
                 incomplete = True
-        if manifests >= MAX_LOCKFILES:
-            errors.append("lockfile count reached configured limit")
-            incomplete = True
-            break
         if limit_reached:
             break
 
