@@ -178,6 +178,7 @@ def _is_safe_osv_query(dependency: Dependency) -> bool:
         and valid_name
         and not _SENSITIVE_NAME.match(dependency.name)
         and bool(_SAFE_VERSION.fullmatch(dependency.version))
+        and not _SENSITIVE_VERSION_TOKEN.search(dependency.version)
     )
 
 
