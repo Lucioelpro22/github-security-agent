@@ -80,9 +80,8 @@ def test_json_report_is_deterministic(tmp_path):
     assert [finding.file for finding in report.findings] == ["a.txt", "z.txt"]
 
 
-
 def test_finding_limit_marks_report_incomplete(tmp_path, monkeypatch):
-    import repository_scan
+    import github_security_agent.repository_scan as repository_scan
 
     monkeypatch.setattr(repository_scan, "MAX_FINDINGS", 1)
     token = "github_pat_" + "C" * 40
@@ -94,7 +93,7 @@ def test_finding_limit_marks_report_incomplete(tmp_path, monkeypatch):
 
 
 def test_time_limit_marks_report_incomplete(tmp_path, monkeypatch):
-    import repository_scan
+    import github_security_agent.repository_scan as repository_scan
 
     monkeypatch.setattr(repository_scan, "MAX_SCAN_SECONDS", 30)
     clock = iter((0.0, 0.0, 30.0))
