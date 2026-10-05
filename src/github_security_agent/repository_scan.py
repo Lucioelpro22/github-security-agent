@@ -100,8 +100,8 @@ _UNTRUSTED_WORKFLOW_VALUE = re.compile(
     re.IGNORECASE,
 )
 _RUN_KEY = re.compile(r"^(\s*)(?:-\s*)?run\s*:\s*(.*)$", re.IGNORECASE)
-_CONFIG_TRUE = re.compile(r"^\s*(?:privileged|allowPrivilegeEscalation)\s*:\s*true\b", re.I)
-_CONFIG_ROOT = re.compile(r"^\s*runAsUser\s*:\s*0\b", re.I)
+_CONFIG_TRUE = re.compile(r'^\s*"?((?:privileged|allowPrivilegeEscalation))"?\s*:\s*true\b', re.I)
+_CONFIG_ROOT = re.compile(r'^\s*"?runAsUser"?\s*:\s*0\b', re.I)
 _DOCKER_ROOT_USER = re.compile(r"^\s*USER\s+root\s*(?:#.*)?$", re.I)
 
 
@@ -142,8 +142,9 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                 )
             )
         if container_config:
-            if _CONFIG_TRUE.match(line):
-                key = line.split(":", 1)[0].strip().lower()
+            config_true = _CONFIG_TRUE.match(line)
+            if config_true:
+                key = config_true.group(1).lower()
                 rule_id = (
                     "container.privilege_escalation"
                     if key == "allowprivilegeescalation"
