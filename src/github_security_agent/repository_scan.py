@@ -74,12 +74,61 @@ def _secret_rule(line: str) -> str | None:
     return None
 
 
+def _is_environment_file(relative: str) -> bool:
+    name = Path(relative).name.lower()
+    if name in {".env.example", ".env.sample", ".env.template", ".env.dist"}:
+        return False
+    return name == ".env" or name.startswith(".env.")
+
+
+def _is_container_config(relative: str) -> bool:
+    path = Path(relative)
+    if path.suffix.lower() not in {".yml", ".yaml", ".json"}:
+        return False
+    parts = {part.lower() for part in path.parts}
+    name = path.name.lower()
+    return bool(
+        parts.intersection({"k8s", "kubernetes", "manifests", "deploy"})
+        or name.startswith(("docker-compose", "compose.", "deployment", "pod."))
+    )
+
+
+_UNTRUSTED_WORKFLOW_VALUE = re.compile(
+    r"\$\{\{\s*(?:github\.head_ref|github\.event\."
+    r"(?:pull_request\.(?:title|body|head\.(?:ref|label))|"
+    r"issue\.(?:title|body)|comment\.body))\s*\}\}",
+    re.IGNORECASE,
+)
+_RUN_KEY = re.compile(r"^(\s*)(?:-\s*)?run\s*:\s*(.*)$", re.IGNORECASE)
+_CONFIG_TRUE = re.compile(
+    r'(?<![\w])"?((?:privileged|allowPrivilegeEscalation))"?\s*:\s*true\b', re.I
+)
+_CONFIG_ROOT = re.compile(r'(?<![\w])"?runAsUser"?\s*:\s*0\b', re.I)
+_DOCKER_ROOT_USER = re.compile(r"^\s*USER\s+root\s*(?:#.*)?$", re.I)
+
+
 def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
     findings: list[Finding] = []
     workflow = relative.startswith(".github/workflows/") and path.suffix.lower() in {
         ".yml",
         ".yaml",
     }
+    container_config = _is_container_config(relative)
+    dockerfile = path.name.lower() == "dockerfile" or path.name.lower().startswith("dockerfile.")
+    if _is_environment_file(relative):
+        findings.append(
+            Finding(
+                "config.environment_file_present",
+                "medium",
+                "low",
+                relative,
+                1,
+                "Environment file found; verify it does not contain production values or belong in version control.",
+                "Keep real environment files out of version control and use a secret manager; commit only sanitized examples.",
+            )
+        )
+
+    run_indent: int | None = None
     for line_number, line in enumerate(text.splitlines(), start=1):
         secret_rule = _secret_rule(line)
         if secret_rule:
@@ -94,8 +143,80 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                     "Revoke and rotate the credential if it is real, then move it to a secret manager.",
                 )
             )
+        if container_config:
+            config_true = _CONFIG_TRUE.search(line)
+            if config_true:
+                key = config_true.group(1).lower()
+                rule_id = (
+                    "container.privilege_escalation"
+                    if key == "allowprivilegeescalation"
+                    else "container.privileged_mode"
+                )
+                findings.append(
+                    Finding(
+                        rule_id,
+                        "high",
+                        "high",
+                        relative,
+                        line_number,
+                        "Container configuration explicitly enables a privileged execution setting.",
+                        "Disable the setting unless a documented requirement justifies it; apply least privilege.",
+                    )
+                )
+            if _CONFIG_ROOT.search(line):
+                findings.append(
+                    Finding(
+                        "container.run_as_root",
+                        "high",
+                        "high",
+                        relative,
+                        line_number,
+                        "Container workload is explicitly configured to run as UID 0.",
+                        "Use a dedicated non-root user and apply the minimum filesystem and capability permissions.",
+                    )
+                )
+        if dockerfile and _DOCKER_ROOT_USER.match(line):
+            findings.append(
+                Finding(
+                    "container.dockerfile_root_user",
+                    "medium",
+                    "high",
+                    relative,
+                    line_number,
+                    "Dockerfile explicitly selects the root user.",
+                    "Use a dedicated non-root runtime user where the application permits it.",
+                )
+            )
         if not workflow:
             continue
+
+        run_match = _RUN_KEY.match(line)
+        in_run = False
+        if run_match:
+            run_indent = len(run_match.group(1).expandtabs(8))
+            in_run = bool(run_match.group(2).strip())
+        elif run_indent is not None:
+            if not line.strip() or line.lstrip().startswith("#"):
+                in_run = True
+            else:
+                indent = len(line) - len(line.lstrip())
+                if indent > run_indent:
+                    in_run = True
+                else:
+                    run_indent = None
+        if in_run and _UNTRUSTED_WORKFLOW_VALUE.search(line):
+            findings.append(
+                Finding(
+                    "workflow.untrusted_event_interpolation",
+                    "high",
+                    "high",
+                    relative,
+                    line_number,
+                    "Untrusted pull request or issue data is interpolated into a shell command.",
+                    "Pass the value through an environment variable and quote/validate it; avoid direct expression interpolation in run scripts.",
+                )
+            )
+
         if re.match(r"^\s*permissions\s*:\s*write-all\b", line, re.IGNORECASE):
             findings.append(
                 Finding(
