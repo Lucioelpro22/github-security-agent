@@ -98,7 +98,7 @@ def test_provider_follows_only_same_origin_next_pages(monkeypatch):
         if "/dependabot/alerts" in request.full_url and "page=1" in request.full_url:
             return FakeResponse(
                 [{"number": 1, "security_advisory": {"summary": "First"}}],
-                '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&page=2>; rel="next"',
+                '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&page=2>; type="application/json"; rel="next"',
             )
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse([{"number": 2, "security_advisory": {"summary": "Second"}}])
