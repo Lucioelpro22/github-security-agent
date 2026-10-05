@@ -16,7 +16,8 @@ El comando `scan-local` analiza el directorio local como datos: no ejecuta scrip
 ## Reglas locales iniciales
 
 - Detecta algunos formatos conocidos de tokens y asignaciones de credenciales; nunca imprime el valor detectado.
-- Señala permisos `write-all`, el evento `pull_request_target` y acciones de terceros que no estén fijadas a un SHA completo.
+- Señala permisos `write-all`, el evento `pull_request_target`, acciones de terceros sin SHA completo y expresiones de datos de eventos interpoladas directamente en `run`.
+- Detecta opciones de contenedor explícitamente privilegiadas, ejecución configurada como UID 0, `USER root` en Dockerfiles y archivos `.env` distintos de ejemplos habituales.
 - Los controles de workflows son heurísticos basados en texto, no una validación semántica de YAML. Revisá los hallazgos y posibles falsos positivos.
 - El recorrido omite enlaces simbólicos, directorios comunes de dependencias/caché y archivos mayores de 1 MB; el presupuesto total es 25 MB y 10.000 archivos.
 
