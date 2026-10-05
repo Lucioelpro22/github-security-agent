@@ -53,16 +53,21 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
 
 def test_parses_nested_legacy_npm_lockfile(tmp_path):
     (tmp_path / "package-lock.json").write_text(
-        json.dumps({"dependencies": {"parent": {"version": "1.0.0", "dependencies": {
-            "child": {"version": "2.0.0"}
-        }}}}),
+        json.dumps(
+            {
+                "dependencies": {
+                    "parent": {"version": "1.0.0", "dependencies": {"child": {"version": "2.0.0"}}}
+                }
+            }
+        ),
         encoding="utf-8",
     )
 
     report = audit.audit_dependencies(tmp_path)
 
     assert {(item.name, item.version) for item in report.dependencies} == {
-        ("parent", "1.0.0"), ("child", "2.0.0")
+        ("parent", "1.0.0"),
+        ("child", "2.0.0"),
     }
 
 
@@ -143,9 +148,7 @@ def test_osv_rejects_oversized_or_mismatched_responses(monkeypatch, body):
 
 
 def test_osv_failure_and_lookup_limit_are_reported(tmp_path, monkeypatch):
-    (tmp_path / "requirements.txt").write_text(
-        "requests==2.31.0\nflask==3.0.0\n", encoding="utf-8"
-    )
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\nflask==3.0.0\n", encoding="utf-8")
     monkeypatch.setattr(audit, "MAX_BATCH_SIZE", 1)
     monkeypatch.setattr(audit, "MAX_OSV_BATCHES", 1)
     monkeypatch.setattr(audit, "_post_osv_batch", lambda _: (_ for _ in ()).throw(OSError()))
