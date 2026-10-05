@@ -145,8 +145,8 @@ def test_detects_explicitly_privileged_container_settings(tmp_path):
 
     report = scan_repository(tmp_path)
     assert [finding.rule_id for finding in report.findings] == [
-        "container.privilege_escalation",
         "container.privileged_mode",
+        "container.privilege_escalation",
         "container.run_as_root",
     ]
 
