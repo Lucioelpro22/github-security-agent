@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write("Invalid token environment variable name.\n")
             return 2
         token = os.environ.get(args.token_env)
-        if not token:
+        if not token or not token.strip():
             sys.stderr.write(f"Required environment variable {args.token_env} is not set.\n")
             return 2
         provider = GitHubApiProvider(token)
