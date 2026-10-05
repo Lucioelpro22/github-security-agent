@@ -100,7 +100,9 @@ _UNTRUSTED_WORKFLOW_VALUE = re.compile(
     re.IGNORECASE,
 )
 _RUN_KEY = re.compile(r"^(\s*)(?:-\s*)?run\s*:\s*(.*)$", re.IGNORECASE)
-_CONFIG_TRUE = re.compile(r'(?<![\w])"?((?:privileged|allowPrivilegeEscalation))"?\s*:\s*true\b', re.I)
+_CONFIG_TRUE = re.compile(
+    r'(?<![\w])"?((?:privileged|allowPrivilegeEscalation))"?\s*:\s*true\b', re.I
+)
 _CONFIG_ROOT = re.compile(r'(?<![\w])"?runAsUser"?\s*:\s*0\b', re.I)
 _DOCKER_ROOT_USER = re.compile(r"^\s*USER\s+root\s*(?:#.*)?$", re.I)
 
@@ -259,6 +261,7 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                         )
                     )
     return findings
+
 
 def scan_repository(root: str | Path) -> ScanReport:
     """Scan text files under root without following symlinks or executing repository code."""
