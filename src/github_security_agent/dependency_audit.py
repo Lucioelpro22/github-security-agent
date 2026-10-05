@@ -128,17 +128,17 @@ def _parse_lockfile(
         packages = data.get("package", [])
         if not isinstance(packages, list):
             return [], False
-        records: list[Dependency] = []
+        toml_records: list[Dependency] = []
         for item in packages:
             if (
                 isinstance(item, dict)
                 and isinstance(item.get("name"), str)
                 and isinstance(item.get("version"), str)
             ):
-                if len(records) >= limit:
-                    return records, True
-                records.append(Dependency(item["name"], item["version"], ecosystem, relative))
-        return records, False
+                if len(toml_records) >= limit:
+                    return toml_records, True
+                toml_records.append(Dependency(item["name"], item["version"], ecosystem, relative))
+        return toml_records, False
     return [], False
 
 
