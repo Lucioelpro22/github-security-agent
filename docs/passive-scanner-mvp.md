@@ -14,7 +14,7 @@ Extend GitHub Security Agent with an opt-in, read-only scan of repository files.
 ## Initial detectors
 
 1. GitHub Actions workflow risks: overly broad token permissions, unsafe pull request triggers, unpinned third-party actions, and direct interpolation of untrusted event fields into `run` commands. These checks are text heuristics, not a full YAML parser.
-2. Repository configuration risks: common insecure settings and accidentally committed environment or credential files.
+2. Repository configuration risks: explicit privileged container settings, container workloads configured as UID 0, Dockerfiles that select `USER root`, and `.env` files other than common example/template names. File presence is advisory because a local scan cannot determine whether a file is tracked by Git.
 3. Secret patterns: local pattern-based detection with redaction; never copy detected values into logs or reports.
 4. Dependency vulnerabilities: integrate a maintained advisory scanner as an optional detector after the core report contract is stable.
 
