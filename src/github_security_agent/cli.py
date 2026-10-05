@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
             report = audit_dependencies(args.path, query_osv=args.query_osv)
         except (OSError, ValueError):
             sys.stderr.write(
-                "Unable to audit the selected path. Check that it is a readable directory.\\n"
+                "Unable to audit the selected path. Check that it is a readable directory.\n"
             )
             return 2
         renderer = dependency_report_json if args.format == "json" else dependency_report_markdown
