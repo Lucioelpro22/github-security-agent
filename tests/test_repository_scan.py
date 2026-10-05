@@ -107,3 +107,66 @@ def test_time_limit_marks_report_incomplete(tmp_path, monkeypatch):
     report = repository_scan.scan_repository(tmp_path)
     assert report.status == "incomplete"
     assert report.files_scanned == 0
+
+def test_detects_untrusted_values_interpolated_in_workflow_run(tmp_path):
+    workflow = tmp_path / ".github/workflows/ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "steps:\\n"
+        "  - run: echo \"${{ github.event.pull_request.title }}\"\\n"
+        "  - run: |\\n"
+        "      printf '%s' \"${{ github.event.issue.body }}\"\\n"
+        "  - env:\\n"
+        "      PR_TITLE: ${{ github.event.pull_request.title }}\\n"
+        "    run: echo \"$PR_TITLE\"\\n",
+        encoding="utf-8",
+    )
+
+    report = scan_repository(tmp_path)
+    matches = [
+        finding
+        for finding in report.findings
+        if finding.rule_id == "workflow.untrusted_event_interpolation"
+    ]
+    assert [finding.line for finding in matches] == [2, 4]
+
+
+def test_detects_explicitly_privileged_container_settings(tmp_path):
+    manifest = tmp_path / "k8s/deployment.yaml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        "securityContext:\\n"
+        "  privileged: true\\n"
+        "  allowPrivilegeEscalation: true\\n"
+        "  runAsUser: 0\\n",
+        encoding="utf-8",
+    )
+
+    report = scan_repository(tmp_path)
+    assert [finding.rule_id for finding in report.findings] == [
+        "container.privilege_escalation",
+        "container.privileged_mode",
+        "container.run_as_root",
+    ]
+
+
+def test_detects_environment_files_but_exempts_examples(tmp_path):
+    (tmp_path / ".env").write_text("APP_MODE=production\\n", encoding="utf-8")
+    (tmp_path / ".env.example").write_text("APP_MODE=development\\n", encoding="utf-8")
+    (tmp_path / ".env.template").write_text("APP_MODE=development\\n", encoding="utf-8")
+
+    report = scan_repository(tmp_path)
+    assert [
+        finding.rule_id for finding in report.findings
+    ] == ["config.environment_file_present"]
+    assert report.findings[0].file == ".env"
+    assert report.findings[0].confidence == "low"
+
+
+def test_detects_explicit_root_user_in_dockerfile(tmp_path):
+    (tmp_path / "Dockerfile").write_text("FROM python:3.12\\nUSER root\\n", encoding="utf-8")
+
+    report = scan_repository(tmp_path)
+    assert [finding.rule_id for finding in report.findings] == [
+        "container.dockerfile_root_user"
+    ]
