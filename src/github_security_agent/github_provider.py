@@ -98,7 +98,9 @@ class GitHubApiProvider:
                 message = f"GitHub API request failed with HTTP {exc.code}"
             raise GitHubProviderError(message) from None
         except (urllib.error.URLError, TimeoutError, OSError):
-            raise GitHubProviderError("GitHub API request failed; check network connectivity") from None
+            raise GitHubProviderError(
+                "GitHub API request failed; check network connectivity"
+            ) from None
         if len(body) > MAX_RESPONSE_BYTES:
             raise GitHubProviderError("GitHub API response exceeded the configured size limit")
         try:
