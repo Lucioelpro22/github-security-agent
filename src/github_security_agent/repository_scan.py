@@ -15,6 +15,7 @@ MAX_TOTAL_BYTES = 25_000_000
 MAX_FILES = 10_000
 IGNORED_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
 
+
 @dataclass(frozen=True, slots=True)
 class Finding:
     rule_id: str
@@ -25,6 +26,7 @@ class Finding:
     summary: str
     recommendation: str
 
+
 @dataclass(frozen=True, slots=True)
 class ScanReport:
     root: str
@@ -33,14 +35,21 @@ class ScanReport:
     files_skipped: int
     findings: tuple[Finding, ...]
 
+
 _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("secret.github_token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,})\b")),
+    (
+        "secret.github_token",
+        re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,})\b"),
+    ),
     ("secret.aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("secret.slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b")),
     ("secret.private_key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
-    ("secret.credential_assignment", re.compile(
-        r"(?i)\b(?:api[_-]?key|client[_-]?secret|password|secret|token)\b\s*[:=]\s*['\"]?([A-Za-z0-9_./+=-]{24,})"
-    )),
+    (
+        "secret.credential_assignment",
+        re.compile(
+            r"(?i)\b(?:api[_-]?key|client[_-]?secret|password|secret|token)\b\s*[:=]\s*['\"]?([A-Za-z0-9_./+=-]{24,})"
+        ),
+    ),
 )
 _PLACEHOLDERS = {"x" * 24, "0" * 24, "changeme", "replace_me", "your_token_here", "example"}
 _ACTION_USE = re.compile(r"^\s*-?\s*uses\s*:\s*([^\s#]+)")
@@ -64,29 +73,50 @@ def _secret_rule(line: str) -> str | None:
 
 def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
     findings: list[Finding] = []
-    workflow = relative.startswith(".github/workflows/") and path.suffix.lower() in {".yml", ".yaml"}
+    workflow = relative.startswith(".github/workflows/") and path.suffix.lower() in {
+        ".yml",
+        ".yaml",
+    }
     for line_number, line in enumerate(text.splitlines(), start=1):
         secret_rule = _secret_rule(line)
         if secret_rule:
-            findings.append(Finding(
-                secret_rule, "high", "medium", relative, line_number,
-                "Potential credential detected; the value was redacted.",
-                "Revoke and rotate the credential if it is real, then move it to a secret manager.",
-            ))
+            findings.append(
+                Finding(
+                    secret_rule,
+                    "high",
+                    "medium",
+                    relative,
+                    line_number,
+                    "Potential credential detected; the value was redacted.",
+                    "Revoke and rotate the credential if it is real, then move it to a secret manager.",
+                )
+            )
         if not workflow:
             continue
         if re.match(r"^\s*permissions\s*:\s*write-all\b", line, re.IGNORECASE):
-            findings.append(Finding(
-                "workflow.permissions_write_all", "high", "high", relative, line_number,
-                "Workflow grants broad write permissions.",
-                "Declare only the specific permissions the workflow needs, preferably read-only.",
-            ))
+            findings.append(
+                Finding(
+                    "workflow.permissions_write_all",
+                    "high",
+                    "high",
+                    relative,
+                    line_number,
+                    "Workflow grants broad write permissions.",
+                    "Declare only the specific permissions the workflow needs, preferably read-only.",
+                )
+            )
         if re.search(r"\bpull_request_target\s*:", line):
-            findings.append(Finding(
-                "workflow.pull_request_target", "high", "medium", relative, line_number,
-                "Privileged pull_request_target trigger needs review for untrusted pull request data.",
-                "Avoid checking out or executing fork-controlled content with privileged tokens or secrets.",
-            ))
+            findings.append(
+                Finding(
+                    "workflow.pull_request_target",
+                    "high",
+                    "medium",
+                    relative,
+                    line_number,
+                    "Privileged pull_request_target trigger needs review for untrusted pull request data.",
+                    "Avoid checking out or executing fork-controlled content with privileged tokens or secrets.",
+                )
+            )
         use = _ACTION_USE.match(line)
         if use:
             reference = use.group(1)
@@ -95,11 +125,17 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
             if "@" in reference:
                 ref = reference.rsplit("@", 1)[1]
                 if not _SHA.fullmatch(ref):
-                    findings.append(Finding(
-                        "workflow.action_not_sha_pinned", "medium", "high", relative, line_number,
-                        "Third-party action is referenced by a mutable version or tag.",
-                        "Pin the action to a reviewed full commit SHA and keep its version in a comment.",
-                    ))
+                    findings.append(
+                        Finding(
+                            "workflow.action_not_sha_pinned",
+                            "medium",
+                            "high",
+                            relative,
+                            line_number,
+                            "Third-party action is referenced by a mutable version or tag.",
+                            "Pin the action to a reviewed full commit SHA and keep its version in a comment.",
+                        )
+                    )
     return findings
 
 
@@ -118,7 +154,8 @@ def scan_repository(root: str | Path) -> ScanReport:
     for current, dirs, files in os.walk(base, topdown=True, followlinks=False):
         current_path = Path(current)
         dirs[:] = sorted(
-            name for name in dirs
+            name
+            for name in dirs
             if name not in IGNORED_DIRS and not (current_path / name).is_symlink()
         )
         for name in sorted(files):
@@ -163,22 +200,40 @@ def report_json(report: ScanReport) -> str:
 
 def report_markdown(report: ScanReport) -> str:
     lines = [
-        "# Local repository security scan", "",
+        "# Local repository security scan",
+        "",
         f"- Status: **{report.status}**",
         f"- Files scanned: **{report.files_scanned}**",
         f"- Files skipped: **{report.files_skipped}**",
-        f"- Findings: **{len(report.findings)}**", "",
+        f"- Findings: **{len(report.findings)}**",
+        "",
     ]
     if not report.findings:
         lines.append("No findings detected by the enabled rules.")
     else:
-        lines.extend(["| Severity | Rule | File:line | Finding | Recommendation |", "|---|---|---|---|---|"])
+        lines.extend(
+            ["| Severity | Rule | File:line | Finding | Recommendation |", "|---|---|---|---|---|"]
+        )
         for item in report.findings:
-            safe_file = html.escape(item.file, quote=False).replace("|", "&#124;").replace("`", "&#96;").replace("\n", " ")
-            safe_summary = html.escape(item.summary, quote=False).replace("|", "&#124;").replace("\n", " ")
-            safe_recommendation = html.escape(item.recommendation, quote=False).replace("|", "&#124;").replace("\n", " ")
-            lines.append(
-                f"| {item.severity} | `{item.rule_id}` | `{safe_file}:{item.line}` | {safe_summary} | {safe_recommendation} |"
+            safe_file = (
+                html.escape(item.file, quote=False)
+                .replace("|", "&#124;")
+                .replace("`", "&#96;")
+                .replace("\n", " ")
             )
-    lines.extend(["", "This report is advisory; no repository files were changed or executed.", ""])
+            safe_summary = (
+                html.escape(item.summary, quote=False).replace("|", "&#124;").replace("\n", " ")
+            )
+            safe_recommendation = (
+                html.escape(item.recommendation, quote=False)
+                .replace("|", "&#124;")
+                .replace("\n", " ")
+            )
+            lines.append(
+                f"| {item.severity} | `{item.rule_id}` | `{safe_file}:{item.line}` "
+                f"| {safe_summary} | {safe_recommendation} |"
+            )
+    lines.extend(
+        ["", "This report is advisory; no repository files were changed or executed.", ""]
+    )
     return "\n".join(lines)
