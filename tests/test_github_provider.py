@@ -49,7 +49,6 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse(
             [
-
                 {
                     "number": 1,
                     "dependency": {"package": {"name": "demo-package"}},
@@ -64,7 +63,6 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         if "/code-scanning/alerts" in request.full_url:
             return FakeResponse(
             [
-
                 {
                     "number": 2,
                     "rule": {
@@ -78,7 +76,6 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
         assert "hide_secret=true" in request.full_url
         return FakeResponse(
         [
-
             {
                 "number": 3,
                 "secret_type_display_name": "GitHub token",
