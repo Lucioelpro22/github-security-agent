@@ -612,6 +612,9 @@ def test_pnpm_two_document_lockfile_includes_environment_packages(tmp_path):
         "lockfileVersion: '8.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n"
         "snapshots:\n  foo@1.0.0: {}\n",
+        "lockfileVersion: '9.0'\n"
+        "importers: {'.': {dependencies: {foo: {specifier: ^1.0.0, version: 1.0.0}}}}\n"
+        "packages: {}\nsnapshots: {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n"
         "packages:\n  foo@1.0.0: {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\nsnapshots: {}\n",
