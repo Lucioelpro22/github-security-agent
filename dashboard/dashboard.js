@@ -229,5 +229,12 @@ if (typeof document !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseReport, filterFindings, MAX_FINDINGS };
+  module.exports = {
+    parseReport,
+    filterFindings,
+    renderReport,
+    clearDashboard,
+    initDashboard,
+    MAX_FINDINGS,
+  };
 }
