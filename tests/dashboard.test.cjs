@@ -87,6 +87,11 @@ function fakeDocument() {
     "dashboard",
     "status",
     "report-file",
+    "dependency-inventory",
+    "dependency-rows",
+    "report-warning",
+    "warning-text",
+    "warning-errors",
   ];
   const elements = new Map(ids.map((id) => [id, new FakeElement("div")]));
   const created = [];
@@ -203,6 +208,129 @@ test("oversized imports are rejected before the file is read", async () => {
   assert.equal(wasRead, false);
   assert.equal(fileInput.value, "");
   assert.match(doc.getElementById("status").textContent, /5 MB/);
+});
+
+
+
+function localSample(overrides = {}) {
+  return {
+    schema_version: 1,
+    report_type: "local_scan",
+    root: "/private/repository",
+    status: "incomplete",
+    files_scanned: 2,
+    files_skipped: 1,
+    findings: [
+      {
+        rule_id: "workflow.action_not_sha_pinned",
+        severity: "medium",
+        confidence: "high",
+        file: "<img src=x onerror=alert(1)>.yml",
+        line: 7,
+        summary: "<script>alert(1)</script> [click](javascript:alert(1))",
+        recommendation: "Pin the action to a reviewed SHA.",
+        secret: "DROP_LOCAL_SECRET",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function dependencySample(overrides = {}) {
+  return {
+    schema_version: 1,
+    report_type: "dependency_audit",
+    status: "complete",
+    manifests_scanned: 1,
+    dependencies: [
+      {
+        name: "<img src=x onerror=alert(2)>",
+        version: "1.2.3",
+        ecosystem: "npm",
+        manifest: "package-lock.json",
+        token: "DROP_DEPENDENCY_TOKEN",
+      },
+    ],
+    advisories: [
+      {
+        dependency: {
+          name: "demo-package",
+          version: "2.0.0",
+          ecosystem: "PyPI",
+          manifest: "requirements.txt",
+        },
+        advisory_id: "GHSA-1234",
+        summary: "<img src=x onerror=alert(3)> [click](javascript:alert(3))",
+        severity: "critical",
+      },
+    ],
+    advisory_lookup: "complete",
+    errors: ["/home/private/secret-path: could not parse"],
+    ...overrides,
+  };
+}
+
+test("normalizes incomplete local scans without exposing the absolute root", () => {
+  const report = parseReport(JSON.stringify(localSample()));
+  assert.equal(report.report_type, "local_scan");
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.findings[0].identifier, "workflow.action_not_sha_pinned");
+  assert.equal(report.findings[0].severity, "medium");
+  assert.equal(report.findings[0].state, "Confianza: high");
+  assert.doesNotMatch(JSON.stringify(report), /private\\/repository|DROP_LOCAL_SECRET/);
+  const doc = fakeDocument();
+  renderReport(report, doc);
+  assert.match(doc.getElementById("warning-text").textContent, /incompleto/);
+  const row = doc.getElementById("finding-rows").children[0];
+  assert.match(row.children[3].textContent, /<script>/);
+  assert.match(row.children[4].textContent, /<img/);
+  assert.equal(doc.created.some((element) => ["img", "script", "a"].includes(element.tagName)), false);
+});
+
+test("normalizes dependency inventories and OSV advisories without inventing severity", () => {
+  const report = parseReport(JSON.stringify(dependencySample()));
+  assert.equal(report.report_type, "dependency_audit");
+  assert.equal(report.findings.length, 1);
+  assert.equal(report.findings[0].severity, "unknown");
+  assert.match(report.findings[0].state, /no incluida/);
+  assert.match(report.errors[0], /omitido por seguridad/);
+  assert.doesNotMatch(JSON.stringify(report), /DROP_DEPENDENCY_TOKEN|DROP_DEPENDENCY_TOKEN/);
+  const doc = fakeDocument();
+  renderReport(report, doc);
+  const advisoryRow = doc.getElementById("finding-rows").children[0];
+  assert.match(advisoryRow.children[3].textContent, /<img/);
+  const packageRow = doc.getElementById("dependency-rows").children[0];
+  assert.match(packageRow.children[0].textContent, /<img/);
+  assert.equal(doc.created.some((element) => ["img", "script", "a"].includes(element.tagName)), false);
+});
+
+test("keeps OSV lookup states distinct and preserves incomplete dependency reports", () => {
+  const notQueried = parseReport(JSON.stringify(dependencySample({
+    advisory_lookup: "not_requested",
+    advisories: [],
+  })));
+  assert.equal(notQueried.lookup, "not_requested");
+  assert.equal(notQueried.findings.length, 0);
+  const partial = parseReport(JSON.stringify(dependencySample({
+    status: "incomplete",
+    advisory_lookup: "incomplete",
+    errors: ["OSV lookup failed: OSError"],
+  })));
+  assert.equal(partial.status, "incomplete");
+  assert.equal(partial.errors[0], "OSV lookup failed: OSError");
+});
+
+test("rejects malformed partial reports and oversized normalized item lists", () => {
+  assert.throws(() => parseReport(JSON.stringify(localSample({ files_skipped: -1 }))), /conteo inválido/);
+  assert.throws(() => parseReport(JSON.stringify(localSample({
+    findings: [{ rule_id: "x", severity: "critical", confidence: "high", file: "a", line: 1 }],
+  }))), /severidad o confianza/);
+  assert.throws(() => parseReport(JSON.stringify(dependencySample({
+    dependencies: [{ name: "x", version: "1.0", ecosystem: "unknown", manifest: "x.lock" }],
+  }))), /ecosistema desconocido/);
+  assert.throws(() => parseReport(JSON.stringify(dependencySample({
+    advisories: Array.from({ length: MAX_FINDINGS + 1 }, () => ({})),
+  }))), /límite de 5.000/);
 });
 
 test("viewer has no remote resources or unsafe HTML insertion APIs", () => {
