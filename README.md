@@ -15,11 +15,11 @@ El comando `scan-local` analiza el directorio local como datos: no ejecuta scrip
 
 ## Visor local de informes
 
-Generá un informe JSON y abrí \`dashboard/index.html\` en el navegador para seleccionarlo:
+Generá un informe JSON y abrí `dashboard/index.html` en el navegador para seleccionarlo:
 
-\`\`\`bash
+```bash
 github-security-agent scan --owner OWNER --repo REPOSITORY --provider github --format json > security-report.json
-\`\`\`
+```
 
 El visor funciona como archivo estático: no inicia un servidor, no contiene el token y no realiza conexiones. Acepta informes completos de esquema 1 de hasta 5 MB y 3.000 hallazgos; aplica filtros por texto, categoría y severidad. Los informes inválidos limpian la vista y no conservan el resultado anterior. El JSON puede contener nombres de repositorios, dependencias y títulos de alertas; tratá el archivo como información privada.
 
