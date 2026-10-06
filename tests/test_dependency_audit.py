@@ -125,10 +125,10 @@ def test_yarn_berry_inventory_skips_osv_without_registry_provenance(tmp_path, mo
 @pytest.mark.parametrize(
     "lock_body",
     [
-        "# yarn lockfile v1\\nnot-a-package-selector:\\n  version \\"1.0.0\\"\\n",
-        "# yarn lockfile v1\\n\\\"foo@\\\":\\n  version \\"1.0.0\\"\\n",
-        "# yarn lockfile v1\\n\\\"foo@npm:\\":\\n  version: 1.0.0\\n",
-        "# yarn lockfile v1\\n\\\"foo@^1.0.0\\\":\\n  version \\"\\"\\n",
+        '# yarn lockfile v1\nnot-a-package-selector:\n  version "1.0.0"\n',
+        '# yarn lockfile v1\n"foo@":\n  version "1.0.0"\n',
+        '# yarn lockfile v1\n"foo@npm:":\n  version: 1.0.0\n',
+        '# yarn lockfile v1\n"foo@^1.0.0":\n  version ""\n',
     ],
 )
 def test_malformed_yarn_lockfile_marks_report_incomplete(tmp_path, lock_body):
@@ -139,7 +139,6 @@ def test_malformed_yarn_lockfile_marks_report_incomplete(tmp_path, lock_body):
     assert report.status == "incomplete"
     assert report.dependencies == ()
     assert report.errors == ("yarn.lock: could not safely parse lockfile",)
-
 
 def test_parses_uv_and_go_lockfiles(tmp_path):
     (tmp_path / "uv.lock").write_text(
