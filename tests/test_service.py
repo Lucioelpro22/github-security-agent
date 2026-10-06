@@ -23,6 +23,7 @@ def test_json_report_excludes_metadata_and_is_parseable() -> None:
     payload = json.loads(report_json(target, [finding]))
     assert payload["findings"][0]["severity"] == "high"
     assert payload["schema_version"] == 1
+    assert payload["report_type"] == "github_alerts"
     assert payload["provider"] == "unknown"
     assert payload["status"] == "complete"
     assert "internal" not in payload["findings"][0]
