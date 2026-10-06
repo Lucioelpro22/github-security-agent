@@ -244,13 +244,16 @@ def _yarn_selector_name(selector: str) -> tuple[str, bool]:
         if slash <= 1 or separator <= slash + 1:
             raise ValueError("invalid Yarn package selector")
         name = selector[:separator]
+        selector_range = selector[separator + 1 :]
         aliased = False
     else:
-        name, separator, _range = selector.partition("@")
+        name, separator, selector_range = selector.partition("@")
         if not separator:
             raise ValueError("invalid Yarn package selector")
-        aliased = selector[len(name) + 1 :].startswith("npm:")
-    if not (
+        aliased = selector_range.startswith("npm:")
+        if aliased and not selector_range.removeprefix("npm:"):
+            raise ValueError("invalid Yarn package selector")
+    if not selector_range or not (
         _SAFE_SCOPED_NAME.fullmatch(name)
         if name.startswith("@")
         else _SAFE_UNSCOPED_NAME.fullmatch(name)
@@ -288,7 +291,7 @@ def _parse_yarn_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
         nonlocal names, aliased, version, resolved
         if not names:
             return False
-        if version is None:
+        if not version:
             raise ValueError("Yarn entry has no exact version")
         if len(records) >= limit:
             return True
