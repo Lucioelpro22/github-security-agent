@@ -1,6 +1,6 @@
 # Visor local de informes
 
-El visor es una página estática ubicada en `dashboard/index.html`. No inicia un servidor, no carga scripts externos, no realiza llamadas de red y no lee variables de entorno. El token de GitHub solo se usa al generar el informe mediante el CLI.
+El visor es una página estática ubicada en `dashboard/index.html`. No inicia un servidor, no carga scripts externos, no realiza llamadas de red y no lee variables de entorno. Acepta informes JSON con esquema v1 emitidos por `scan` o `plan`; todavía no admite las salidas de `scan-local` ni `audit-dependencies`. El token de GitHub solo se usa al generar el informe mediante el CLI.
 
 ## Flujo
 
