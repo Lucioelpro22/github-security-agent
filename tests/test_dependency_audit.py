@@ -661,3 +661,90 @@ def test_pnpm_limit_and_unknown_sources_are_explicit():
 
     assert truncated
     assert [(item.name, item.source_kind) for item in records] == [("first", "registry-npm")]
+
+
+def test_composer_inventory_production_development_and_literal_branches(tmp_path, monkeypatch):
+    data = {
+        "packages": [
+            {
+                "name": "vendor/library",
+                "version": "v1.2.3",
+                "dist": {"url": "https://api.github.com/repos/vendor/library/zipball/abc"},
+                "require": {"vendor/transitive": "^2"},
+                "replace": {"vendor/replaced": "*"},
+            },
+        ],
+        "packages-dev": [
+            {
+                "name": "vendor/testing",
+                "version": "dev-main",
+                "extra": {"branch-alias": {"dev-main": "2.x-dev"}},
+            }
+        ],
+        "platform": {"php": "^8.2"},
+        "scripts": {"post-install-cmd": "touch SHOULD_NOT_EXIST"},
+    }
+    (tmp_path / "composer.lock").write_text(json.dumps(data))
+    monkeypatch.setattr(
+        audit, "_post_osv_batch", lambda _: pytest.fail("unexpected network lookup")
+    )
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert report.manifests_scanned == 1
+    assert [(d.name, d.version, d.ecosystem, d.source_kind) for d in report.dependencies] == [
+        ("vendor/library", "v1.2.3", "Packagist", "unknown"),
+        ("vendor/testing", "dev-main", "Packagist", "unknown"),
+    ]
+    assert not (tmp_path / "SHOULD_NOT_EXIST").exists()
+    queried = audit.audit_dependencies(tmp_path, query_osv=True)
+    assert queried.status == "incomplete"
+    assert queried.advisory_lookup == "incomplete"
+    assert queried.dependencies == report.dependencies
+    assert "Packagist" in audit.report_json(report)
+    assert "Dependencies inventoried: **2**" in audit.report_markdown(report)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "[]",
+        "{}",
+        '{"packages": [], "packages-dev": null}',
+        '{"packages": {}, "packages-dev": []}',
+        '{"packages": [], "packages": [], "packages-dev": []}',
+        '{"packages": [{"name": "vendor/a", "name": "vendor/b", "version": "1.0"}], "packages-dev": []}',
+        json.dumps({"packages": [None], "packages-dev": []}),
+        json.dumps({"packages": [{"name": "invalid", "version": "1.0"}], "packages-dev": []}),
+        json.dumps({"packages": [{"name": "vendor/a", "version": 1}], "packages-dev": []}),
+        json.dumps({"packages": [{"name": "vendor/a", "version": "^1.0"}], "packages-dev": []}),
+        json.dumps(
+            {
+                "packages": [{"name": "vendor/a", "version": "1.0"}],
+                "packages-dev": [{"name": "vendor/a", "version": "2.0"}],
+            }
+        ),
+    ],
+)
+def test_invalid_composer_is_incomplete_without_leaking_metadata(tmp_path, body):
+    (tmp_path / "composer.lock").write_text(body)
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert report.errors == ("composer.lock: could not safely parse lockfile",)
+
+
+def test_composer_empty_lists_and_limit(tmp_path, monkeypatch):
+    (tmp_path / "composer.lock").write_text('{"packages": [], "packages-dev": []}')
+    assert audit.audit_dependencies(tmp_path).status == "complete"
+    data = {
+        "packages": [{"name": "vendor/a", "version": "1.0"}],
+        "packages-dev": [{"name": "vendor/b", "version": "1.0"}],
+    }
+    (tmp_path / "composer.lock").write_text(json.dumps(data))
+    monkeypatch.setattr(audit, "MAX_DEPENDENCIES", 1)
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert [d.name for d in report.dependencies] == ["vendor/a"]
+    data["packages-dev"] = []
+    (tmp_path / "composer.lock").write_text(json.dumps(data))
+    assert audit.audit_dependencies(tmp_path).status == "complete"
