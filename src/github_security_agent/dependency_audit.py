@@ -32,6 +32,7 @@ OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
 _SAFE_UNSCOPED_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 _SAFE_SCOPED_NAME = re.compile(r"^@[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$")
+_SAFE_GO_MODULE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._!~+-]{0,255}(?:/[A-Za-z0-9._!~+-]{1,255})*$")
 _SAFE_VERSION = re.compile(r"^v?\d[A-Za-z0-9.+!_-]{0,127}$")
 _SENSITIVE_NAME = re.compile(
     r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\b|xox[baprs]-|sk-[a-z0-9_-]{20,})"
@@ -100,6 +101,23 @@ def _walk_npm_dependencies(
     return records, False
 
 
+def _parse_go_sum(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    records: list[Dependency] = []
+    for line in text.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) != 3 or not fields[2]:
+            raise ValueError("invalid go.sum record")
+        name, version, _checksum = fields
+        if version.endswith("/go.mod"):
+            continue
+        if len(records) >= limit:
+            return records, True
+        records.append(Dependency(name, version, "Go", path))
+    return records, False
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
@@ -122,9 +140,11 @@ def _parse_lockfile(
         if not records and isinstance(data, dict):
             return _walk_npm_dependencies(data.get("dependencies"), relative, limit)
         return records, False
-    if path.name in {"poetry.lock", "Cargo.lock"}:
+    if path.name == "go.sum":
+        return _parse_go_sum(text, relative, limit)
+    if path.name in {"poetry.lock", "uv.lock", "Cargo.lock"}:
         data = tomllib.loads(text)
-        ecosystem = "PyPI" if path.name == "poetry.lock" else "crates.io"
+        ecosystem = "crates.io" if path.name == "Cargo.lock" else "PyPI"
         packages = data.get("package", [])
         if not isinstance(packages, list):
             return [], False
@@ -169,13 +189,16 @@ def _read_bounded_lockfile(path: Path, remaining_bytes: int) -> str:
 
 
 def _is_safe_osv_query(dependency: Dependency) -> bool:
-    valid_name = bool(
-        _SAFE_SCOPED_NAME.fullmatch(dependency.name)
-        if dependency.name.startswith("@")
-        else _SAFE_UNSCOPED_NAME.fullmatch(dependency.name)
-    )
+    if dependency.ecosystem == "Go":
+        valid_name = bool(_SAFE_GO_MODULE.fullmatch(dependency.name))
+    else:
+        valid_name = bool(
+            _SAFE_SCOPED_NAME.fullmatch(dependency.name)
+            if dependency.name.startswith("@")
+            else _SAFE_UNSCOPED_NAME.fullmatch(dependency.name)
+        )
     return (
-        dependency.ecosystem in {"PyPI", "npm", "crates.io"}
+        dependency.ecosystem in {"PyPI", "npm", "crates.io", "Go"}
         and valid_name
         and not _SENSITIVE_NAME.match(dependency.name)
         and bool(_SAFE_VERSION.fullmatch(dependency.version))
@@ -223,7 +246,9 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "package-lock.json",
         "npm-shrinkwrap.json",
         "poetry.lock",
+        "uv.lock",
         "Cargo.lock",
+        "go.sum",
     }
     dependencies: list[Dependency] = []
     errors: list[str] = []
