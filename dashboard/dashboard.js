@@ -133,7 +133,8 @@ function normalizeLocalScan(report) {
       title: cleanText(item.summary, "Hallazgo local"),
       severity,
       state: "Confianza: " + confidence,
-      detail: file + ":" + item.line + (recommendation ? " · " + recommendation : ""),
+      detail: file + ":" + item.line + " · Confianza: " + confidence +
+        (recommendation ? " · " + recommendation : ""),
       search_text: rule + " " + file + " " + recommendation,
     };
   });
@@ -347,7 +348,6 @@ function renderReport(report, doc) {
   const warning = doc.getElementById("report-warning");
   const warningText = doc.getElementById("warning-text");
   const warningErrors = doc.getElementById("warning-errors");
-  warning.hidden = report.status === "complete" && report.errors.length === 0;
   warningText.textContent = report.status === "incomplete"
     ? "Informe incompleto: los resultados pueden ser parciales."
     : report.report_type === "dependency_audit" && report.lookup === "not_requested"
@@ -359,9 +359,7 @@ function renderReport(report, doc) {
           : "";
   warningErrors.replaceChildren();
   for (const error of report.errors) warningErrors.append(makeElement(doc, "li", error, ""));
-  if (report.report_type === "dependency_audit") {
-    warning.hidden = false;
-  }
+  warning.hidden = !warningText.textContent && report.errors.length === 0;
 
   const applyFilters = () => {
     const filtered = filterFindings(report.findings, {
