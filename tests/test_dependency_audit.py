@@ -52,6 +52,45 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
     }
 
 
+
+def test_parses_uv_and_go_lockfiles(tmp_path):
+    (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "httpx"\nversion = "0.27.0"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "go.sum").write_text(
+        "golang.org/x/text v0.16.0 h1:checksum\n"
+        "golang.org/x/text v0.16.0/go.mod h1:modchecksum\n",
+        encoding="utf-8",
+    )
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "complete"
+    assert report.manifests_scanned == 2
+    assert {(item.name, item.version, item.ecosystem) for item in report.dependencies} == {
+        ("httpx", "0.27.0", "PyPI"),
+        ("golang.org/x/text", "v0.16.0", "Go"),
+    }
+
+
+def test_malformed_go_sum_marks_report_incomplete(tmp_path):
+    (tmp_path / "go.sum").write_text("golang.org/x/text v0.16.0\n", encoding="utf-8")
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert report.errors == ("go.sum: could not safely parse lockfile",)
+
+
+def test_osv_accepts_go_module_identifiers():
+    dependency = audit.Dependency("golang.org/x/text", "v0.16.0", "Go", "go.sum")
+    assert audit._is_safe_osv_query(dependency)
+    unsafe = audit.Dependency("golang.org/x/text;secret", "v0.16.0", "Go", "go.sum")
+    assert not audit._is_safe_osv_query(unsafe)
+
+
 def test_parses_nested_legacy_npm_lockfile(tmp_path):
     (tmp_path / "package-lock.json").write_text(
         json.dumps(
