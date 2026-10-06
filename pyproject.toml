@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Luciano Leal" }]
-dependencies = []
+dependencies = [
+  "PyYAML>=6.0.3,<7",
+]
 
 [project.scripts]
 github-security-agent = "github_security_agent.cli:main"
