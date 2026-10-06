@@ -578,17 +578,17 @@ def _uv_source_kind(source: Any) -> str:
     return "unknown"
 
 
-def _composer_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError("duplicate Composer JSON key")
+            raise ValueError("duplicate lockfile JSON key")
         result[key] = value
     return result
 
 
 def _parse_composer_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
-    data = json.loads(text, object_pairs_hook=_composer_object)
+    data = json.loads(text, object_pairs_hook=_strict_json_object)
     if not isinstance(data, dict):
         raise ValueError("invalid Composer lockfile")
     records: list[Dependency] = []
@@ -619,6 +619,62 @@ def _parse_composer_lock(text: str, path: str, limit: int) -> tuple[list[Depende
     return records, False
 
 
+def _parse_pipfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    data = json.loads(text, object_pairs_hook=_strict_json_object)
+    if not isinstance(data, dict) or not isinstance(data.get("_meta"), dict):
+        raise ValueError("invalid Pipenv lockfile")
+    meta = data["_meta"]
+    if type(meta.get("pipfile-spec")) is not int or meta["pipfile-spec"] != 6:
+        raise ValueError("unsupported Pipenv lockfile specification")
+    sources = meta.get("sources")
+    if not isinstance(sources, list):
+        raise ValueError("invalid Pipenv sources")
+    indexes: dict[str, str] = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            raise ValueError("invalid Pipenv source")
+        name, url = source.get("name"), source.get("url")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in indexes
+            or not isinstance(url, str)
+            or type(source.get("verify_ssl")) is not bool
+        ):
+            raise ValueError("invalid or ambiguous Pipenv source")
+        indexes[name] = (
+            "registry-pypi"
+            if source["verify_ssl"] is True and _public_registry_url(url, "pypi.org", {"/simple"})
+            else "registry-other"
+        )
+    if not isinstance(data.get("default"), dict) or not isinstance(data.get("develop"), dict):
+        raise ValueError("missing Pipenv package categories")
+    records: list[Dependency] = []
+    for category in sorted(key for key in data if key != "_meta"):
+        packages = data[category]
+        if not isinstance(packages, dict):
+            raise ValueError("invalid Pipenv category")
+        for name, item in packages.items():
+            if not _SAFE_UNSCOPED_NAME.fullmatch(name) or not isinstance(item, dict):
+                raise ValueError("invalid Pipenv package")
+            version, index = item.get("version"), item.get("index")
+            if (
+                not isinstance(version, str)
+                or not version.startswith("==")
+                or not _SAFE_VERSION.fullmatch(version[2:])
+                or (index is not None and (not isinstance(index, str) or index not in indexes))
+            ):
+                raise ValueError("Pipenv package lacks an exact version or valid index")
+            if len(records) >= limit:
+                return records, True
+            source_kind = indexes[index] if isinstance(index, str) else "unknown"
+            # A VCS/path/file entry cannot become public merely by adding an index.
+            if any(key in item for key in ("git", "hg", "svn", "bzr", "path", "file", "editable")):
+                source_kind = "unknown"
+            records.append(Dependency(name, version[2:], "PyPI", path, source_kind))
+    return records, False
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
@@ -630,6 +686,8 @@ def _parse_lockfile(
         return _parse_pnpm_lock(text, relative, limit)
     if path.name == "composer.lock":
         return _parse_composer_lock(text, relative, limit)
+    if path.name == "Pipfile.lock":
+        return _parse_pipfile_lock(text, relative, limit)
     if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         data = json.loads(text)
         records: list[Dependency] = []
@@ -774,6 +832,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "yarn.lock",
         "pnpm-lock.yaml",
         "composer.lock",
+        "Pipfile.lock",
         "poetry.lock",
         "uv.lock",
         "Cargo.lock",

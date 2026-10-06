@@ -748,3 +748,143 @@ def test_composer_empty_lists_and_limit(tmp_path, monkeypatch):
     data["packages-dev"] = []
     (tmp_path / "composer.lock").write_text(json.dumps(data))
     assert audit.audit_dependencies(tmp_path).status == "complete"
+
+
+def _pipfile_fixture():
+    return {
+        "_meta": {
+            "pipfile-spec": 6,
+            "sources": [
+                {"name": "pypi", "url": "https://pypi.org/simple", "verify_ssl": True},
+                {
+                    "name": "private",
+                    "url": "https://user:password@packages.internal/simple",
+                    "verify_ssl": True,
+                },
+            ],
+        },
+        "default": {
+            "requests": {
+                "version": "==2.31.0",
+                "index": "pypi",
+                "hashes": ["sha256:abc"],
+                "markers": "python_version >= '3.8'",
+            }
+        },
+        "develop": {"pytest": {"version": "==9.1.1", "index": "pypi"}},
+        "docs": {"sphinx": {"version": "==8.0.0"}},
+    }
+
+
+def test_pipfile_categories_and_explicit_public_index_only(tmp_path, monkeypatch):
+    data = _pipfile_fixture()
+    data["default"]["internal"] = {"version": "==1.0.0", "index": "private"}
+    data["default"]["vcs"] = {
+        "version": "==2.0.0",
+        "index": "pypi",
+        "git": "https://user:password@git.internal/project",
+    }
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(data))
+    sent = []
+    monkeypatch.setattr(
+        audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[] for _ in batch]
+    )
+    offline = audit.audit_dependencies(tmp_path)
+    assert offline.status == "complete"
+    assert offline.manifests_scanned == 1
+    assert len(offline.dependencies) == 5
+    assert not sent
+    assert {d.name: d.source_kind for d in offline.dependencies} == {
+        "requests": "registry-pypi",
+        "pytest": "registry-pypi",
+        "internal": "registry-other",
+        "sphinx": "unknown",
+        "vcs": "unknown",
+    }
+    assert "password" not in audit.report_json(offline)
+    online = audit.audit_dependencies(tmp_path, query_osv=True)
+    assert online.status == "incomplete"
+    assert {d.name for d in sent} == {"requests", "pytest"}
+    assert {d.version for d in sent} == {"2.31.0", "9.1.1"}
+    assert all(d.ecosystem == "PyPI" for d in sent)
+
+
+@pytest.mark.parametrize(
+    "url,verify",
+    [
+        ("https://pypi.org.attacker.invalid/simple", True),
+        ("http://pypi.org/simple", True),
+        ("https://pypi.org/simple?token=secret", True),
+        ("https://user:secret@pypi.org/simple", True),
+        ("https://pypi.org:443/simple", True),
+        ("https://pypi.org/simple", False),
+        ("https://${PRIVATE_HOST}/simple", True),
+    ],
+)
+def test_pipfile_rejects_unsafe_public_source_claims(tmp_path, monkeypatch, url, verify):
+    data = _pipfile_fixture()
+    data["_meta"]["sources"][0].update(url=url, verify_ssl=verify)
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(data))
+    monkeypatch.setattr(audit, "_post_osv_batch", lambda _: pytest.fail("private query"))
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+    assert report.status == "incomplete"
+    assert all(d.source_kind != "registry-pypi" for d in report.dependencies)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda d: d.pop("_meta"),
+        lambda d: d["_meta"].update({"pipfile-spec": True}),
+        lambda d: d["_meta"].update({"pipfile-spec": 7}),
+        lambda d: d["_meta"].update(sources=None),
+        lambda d: d["_meta"]["sources"].append(d["_meta"]["sources"][0]),
+        lambda d: d["_meta"]["sources"][0].update(verify_ssl="true"),
+        lambda d: d.pop("develop"),
+        lambda d: d.update(docs=[]),
+        lambda d: d["default"].update(bad=None),
+        lambda d: d["default"]["requests"].update(version=">=1.0"),
+        lambda d: d["default"]["requests"].update(version="==1.*"),
+        lambda d: d["default"]["requests"].update(version=1),
+        lambda d: d["default"]["requests"].update(index="missing"),
+        lambda d: d["default"].update({"bad/name": {"version": "==1.0"}}),
+        lambda d: d["default"].update(local={"path": "."}),
+    ],
+)
+def test_malformed_pipfile_is_incomplete(tmp_path, mutation):
+    data = _pipfile_fixture()
+    mutation(data)
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(data))
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert report.errors == ("Pipfile.lock: could not safely parse lockfile",)
+
+
+def test_pipfile_duplicate_json_keys_and_limit(tmp_path, monkeypatch):
+    (tmp_path / "Pipfile.lock").write_text('{"_meta": {}, "_meta": {}}')
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+    data = _pipfile_fixture()
+    monkeypatch.setattr(audit, "MAX_DEPENDENCIES", 2)
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(data))
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert len(report.dependencies) == 2
+    data["docs"] = {}
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(data))
+    assert audit.audit_dependencies(tmp_path).status == "complete"
+
+
+def test_pipfile_retains_pins_across_categories_without_evaluating_markers(tmp_path):
+    data = _pipfile_fixture()
+    data["docs"] = {
+        "requests": {
+            "version": "==2.30.0",
+            "index": "pypi",
+            "markers": "sys_platform == 'imaginary'",
+        }
+    }
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(data))
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert {d.version for d in report.dependencies if d.name == "requests"} == {"2.30.0", "2.31.0"}
