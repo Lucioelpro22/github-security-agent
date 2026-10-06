@@ -247,8 +247,8 @@ def _yarn_selector_name(selector: str) -> tuple[str, bool]:
         selector_range = selector[separator + 1 :]
         aliased = False
     else:
-        name, separator, selector_range = selector.partition("@")
-        if not separator:
+        name, has_separator, selector_range = selector.partition("@")
+        if not has_separator:
             raise ValueError("invalid Yarn package selector")
         aliased = selector_range.startswith("npm:")
         if aliased and not selector_range.removeprefix("npm:"):
