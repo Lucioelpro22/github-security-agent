@@ -473,6 +473,7 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
         snapshots = document.get("snapshots")
         if not all(isinstance(item, dict) for item in (importers, packages, snapshots)):
             raise ValueError("invalid pnpm lockfile structure")
+        document_snapshots: dict[tuple[str, str], Any] = {}
         for snapshot_key, snapshot in snapshots.items():
             if not isinstance(snapshot_key, str) or not isinstance(snapshot, dict):
                 raise ValueError("invalid pnpm snapshot")
@@ -481,15 +482,56 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
             if not isinstance(metadata, dict):
                 raise ValueError("pnpm snapshot has no package metadata")
             identity = (name, version)
+            document_snapshots[identity] = snapshot
             source_kind = _pnpm_source_kind(metadata)
             if identity in unique:
                 previous = unique[identity]
                 if previous.source_kind != source_kind:
                     unique[identity] = Dependency(name, version, "npm", path, "unknown")
-                continue
-            if len(unique) >= limit:
+            elif len(unique) >= limit:
                 return list(unique.values()), True
-            unique[identity] = Dependency(name, version, "npm", path, source_kind)
+            else:
+                unique[identity] = Dependency(name, version, "npm", path, source_kind)
+
+        def validate_reference(name: Any, version: Any) -> None:
+            if not isinstance(name, str) or not isinstance(version, str) or not version:
+                raise ValueError("invalid pnpm dependency reference")
+            if version.startswith(("link:", "workspace:", "file:", "directory:")):
+                return
+            if version.startswith("npm:"):
+                target = version.removeprefix("npm:")
+                target_name, target_version, _ = _pnpm_locator(target)
+            else:
+                target_name, target_version, _ = _pnpm_locator(f"{name}@{version}")
+            if (target_name, target_version) not in document_snapshots:
+                raise ValueError("pnpm dependency has no snapshot")
+
+        dependency_sections = (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "configDependencies",
+            "packageManagerDependencies",
+        )
+        for importer_path, importer in importers.items():
+            if not isinstance(importer_path, str) or not isinstance(importer, dict):
+                raise ValueError("invalid pnpm importer")
+            for section in dependency_sections:
+                references = importer.get(section, {})
+                if not isinstance(references, dict):
+                    raise ValueError("invalid pnpm importer dependencies")
+                for package_name, reference in references.items():
+                    if not isinstance(reference, dict):
+                        raise ValueError("invalid pnpm importer dependency")
+                    validate_reference(package_name, reference.get("version"))
+
+        for snapshot in document_snapshots.values():
+            for section in ("dependencies", "optionalDependencies"):
+                references = snapshot.get(section, {})
+                if not isinstance(references, dict):
+                    raise ValueError("invalid pnpm snapshot dependencies")
+                for package_name, version in references.items():
+                    validate_reference(package_name, version)
     return list(unique.values()), False
 
 
