@@ -1,28 +1,34 @@
 # Visor local de informes
 
-El visor es una página estática ubicada en `dashboard/index.html`. No inicia un servidor, no carga scripts externos, no realiza llamadas de red y no lee variables de entorno. Acepta informes JSON con esquema v1 emitidos por `scan` o `plan`; todavía no admite las salidas de `scan-local` ni `audit-dependencies`. El token de GitHub solo se usa al generar el informe mediante el CLI.
+`dashboard/index.html` es un visor estático de solo lectura. No inicia un servidor, no carga scripts externos, no realiza llamadas de red y no lee variables de entorno. Admite informes completos o parciales de `scan`/`plan`, `scan-local` y `audit-dependencies` mediante contratos JSON v1 identificados por `report_type`. Las salidas incompletas se muestran con una advertencia visible y sus errores permitidos; nunca se presentan como completas.
 
 ## Flujo
 
-1. Ejecutá un escaneo y guardá su salida JSON:
+Generá cualquiera de estos informes JSON:
 
-   ```bash
-   github-security-agent scan --owner OWNER --repo REPOSITORY --provider github --format json > security-report.json
-   ```
+```bash
+github-security-agent scan --owner OWNER --repo REPOSITORY --provider github --format json > github-report.json
+github-security-agent scan-local . --format json > local-report.json
+github-security-agent audit-dependencies . --format json > dependency-report.json
+# Opcional: consulta de avisos OSV, envía nombres/ecosistemas/versiones exactas a OSV.dev
+github-security-agent audit-dependencies . --query-osv --format json > dependency-report.json
+```
 
-2. Abrí `dashboard/index.html` desde el repositorio en un navegador moderno.
-3. Seleccioná `security-report.json`. El archivo se procesa en memoria; el visor no lo copia ni lo persiste.
+Abrí `dashboard/index.html` en un navegador y seleccioná el JSON. El archivo se procesa en memoria. No se copia ni persiste; el token de GitHub solo se usa en el CLI para generar el informe remoto.
 
-El CLI solo emite JSON si el escaneo terminó correctamente. La salida incluye `schema_version: 1`, el proveedor y `status: complete`. El visor rechaza otras versiones, estados incompletos, esquemas inválidos, archivos mayores de 5 MB y más de 3.000 hallazgos. Si una carga falla, limpia la vista anterior.
+## Qué muestra
 
-## Datos y seguridad
+- **scan/plan:** hallazgos de Dependabot, Code Scanning y Secret Scanning con la severidad que informa GitHub.
+- **scan-local:** regla, resumen, severidad, confianza, archivo y línea, y recomendación. Las rutas absolutas nunca se muestran.
+- **audit-dependencies:** inventario de paquetes en una tabla separada y avisos OSV en el listado. El formato fuente no provee severidad para los avisos; el visor los marca como no incluida y no infiere una clasificación.
+- Una consulta OSV no solicitada se distingue de una consulta completa sin avisos y de una consulta incompleta. “Sin avisos devueltos” no significa que el paquete no tenga vulnerabilidades.
+- Búsqueda por texto, filtro por categoría y severidad, conteos según la fuente y estado del informe.
 
-- El visor conserva solo campos conocidos del informe; ignora campos extra como `secret` y `metadata`.
-- Los valores, incluidos títulos remotos, se insertan como texto con `textContent`; no se interpreta HTML ni Markdown.
-- El HTML usa una política CSP local y no referencia CDN, fuentes, imágenes ni servicios remotos.
-- Resume hallazgos por las tres categorías que entrega hoy el proveedor (Dependabot, Code Scanning y Secret Scanning), además de conteos por cada severidad; incluye búsqueda y filtros.
-- El proveedor actual aún no recopila alertas de Actions.
-- Que un informe tenga estructura válida no prueba su autenticidad. Revisá que provenga de tu ejecución local del CLI.
-- El JSON puede incluir nombres de repositorios, dependencias, reglas y títulos de alertas. Tratá el archivo como información privada y eliminálo al terminar si no necesitás conservarlo.
+## Límites y privacidad
 
-El visor es de lectura. No modifica repositorios, no cierra alertas, no rota secretos y no llama a la API de GitHub.
+- Acepta archivos de hasta 5 MiB y hasta 5.000 hallazgos, paquetes o avisos por colección. Si el tamaño o cantidad excede el límite, rechaza el archivo completo; no trunca en silencio.
+- Solo conserva campos permitidos para cada tipo. Campos adicionales como `secret`, `token`, `metadata` y respuestas crudas se descartan.
+- Los datos remotos, rutas, nombres de paquetes y textos de OSV se muestran como texto plano con `textContent`; no se interpretan HTML/Markdown ni se generan enlaces.
+- El HTML establece CSP local, no referencia CDNs y bloquea conexiones.
+- El JSON puede contener nombres de repositorios, archivos, dependencias, reglas y avisos; tratá el informe como información privada. Una estructura válida no prueba autenticidad, así que verificá que el archivo provenga de tu ejecución local del CLI.
+- Informes incompatibles o malformados limpian cualquier vista anterior. El visor nunca modifica repositorios, cierra alertas, rota secretos ni llama a GitHub.
