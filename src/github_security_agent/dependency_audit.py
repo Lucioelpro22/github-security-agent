@@ -337,7 +337,10 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
 
 
 def report_json(report: DependencyReport) -> str:
-    return json.dumps(asdict(report), indent=2, sort_keys=True)
+    payload = asdict(report)
+    payload["schema_version"] = 1
+    payload["report_type"] = "dependency_audit"
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 def report_markdown(report: DependencyReport) -> str:

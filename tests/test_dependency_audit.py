@@ -215,6 +215,8 @@ def test_dependency_cli_outputs_inventory_json(tmp_path, capsys):
 
     output = json.loads(capsys.readouterr().out)
     assert output["advisory_lookup"] == "not_requested"
+    assert output["schema_version"] == 1
+    assert output["report_type"] == "dependency_audit"
     assert output["dependencies"][0]["name"] == "requests"
 
 

@@ -41,6 +41,8 @@ def test_redacts_detected_secrets_from_all_reports(tmp_path):
     assert canary not in markdown
     assert "redacted" in markdown.lower() or "potential credential" in markdown.lower()
     assert json.loads(serialized)["findings"][0]["line"] == 1
+    assert json.loads(serialized)["schema_version"] == 1
+    assert json.loads(serialized)["report_type"] == "local_scan"
 
 
 def test_skips_symlinks_and_does_not_scan_outside_root(tmp_path):
