@@ -39,6 +39,7 @@ def report_json(
     return json.dumps(
         {
             "schema_version": 1,
+            "report_type": "github_alerts",
             "provider": provider,
             "status": "complete",
             "repository": target.full_name,
