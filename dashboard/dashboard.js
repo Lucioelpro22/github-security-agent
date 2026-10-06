@@ -208,9 +208,20 @@ function normalizeDependencyReport(report) {
   const errors = report.errors.map((item) => {
     if (typeof item !== "string") throw new Error("El informe contiene un detalle de error inválido.");
     const text = cleanText(item, "");
-    return /(?:^|[\s:])(?:\/|[A-Za-z]:[\\/])/.test(text)
-      ? "Detalle de ruta omitido por seguridad."
-      : text;
+    const lower = text.toLocaleLowerCase();
+    if (lower.endsWith("could not enumerate directory")) return "No se pudo enumerar un directorio.";
+    if (lower.endsWith("skipped by size limit")) return "Se omitió un lockfile por su tamaño.";
+    if (lower.endsWith("could not safely parse lockfile")) return "No se pudo interpretar un lockfile.";
+    if (lower === "scan time limit reached") return "Se alcanzó el límite de tiempo del análisis.";
+    if (lower === "dependency count reached configured limit") return "Se alcanzó el límite de dependencias.";
+    if (/^osv lookup limited to the first \d+ dependencies$/i.test(text)) {
+      return "La consulta OSV alcanzó su límite de paquetes.";
+    }
+    if (/^osv lookup skipped \d+ invalid package identifiers$/i.test(text)) {
+      return "La consulta OSV omitió identificadores de paquetes inválidos.";
+    }
+    if (/^osv lookup failed: [A-Za-z]+$/i.test(text)) return "Falló una consulta a OSV.";
+    return "Detalle de auditoría omitido por seguridad.";
   });
   let lookupLabel = "Consulta OSV no solicitada";
   if (report.advisory_lookup === "complete") lookupLabel = "Consulta OSV completa";
