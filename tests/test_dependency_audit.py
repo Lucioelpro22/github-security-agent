@@ -119,6 +119,54 @@ def test_malformed_go_sum_marks_report_incomplete(tmp_path):
     assert report.errors == ("go.sum: could not safely parse lockfile",)
 
 
+def test_osv_skips_nonpublic_sources_across_lockfile_types(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text(
+        "--index-url https://packages.internal/simple\ninternal-req==1.0.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps({
+            "packages": {
+                "node_modules/internal-npm": {
+                    "version": "2.0.0",
+                    "resolved": "https://npm.internal/internal-npm.tgz",
+                },
+                "node_modules/public-npm": {
+                    "version": "3.0.0",
+                    "resolved": "https://registry.npmjs.org/public-npm/-/public-npm-3.0.0.tgz",
+                },
+            }
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "poetry.lock").write_text(
+        '[[package]]\nname = "internal-poetry"\nversion = "4.0.0"\n'
+        'source = { type = "legacy", url = "https://packages.internal/simple" }\n'
+        '[[package]]\nname = "git-poetry"\nversion = "5.0.0"\n'
+        'source = { type = "git", url = "https://example.com/internal" }\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "private-crate"\nversion = "6.0.0"\n'
+        'source = "git+https://example.com/private"\n'
+        '[[package]]\nname = "serde"\nversion = "1.0.0"\n'
+        'source = "registry+https://github.com/rust-lang/crates.io-index"\n',
+        encoding="utf-8",
+    )
+    sent = []
+    monkeypatch.setattr(audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[] for _ in batch])
+
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+
+    assert report.status == "incomplete"
+    assert report.advisory_lookup == "incomplete"
+    assert {(item.name, item.ecosystem) for item in sent} == {
+        ("public-npm", "npm"),
+        ("serde", "crates.io"),
+    }
+    assert all("internal" not in item.name and "git-" not in item.name for item in sent)
+
+
 def test_osv_accepts_go_module_identifiers():
     dependency = audit.Dependency("golang.org/x/text", "v0.16.0", "Go", "go.sum")
     assert audit._is_safe_osv_query(dependency)
@@ -193,7 +241,7 @@ def test_osv_request_uses_only_package_identifiers_and_checks_response(monkeypat
         return Response()
 
     monkeypatch.setattr(audit.urllib.request, "urlopen", fake_urlopen)
-    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt")
+    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt", "registry-pypi")
 
     assert audit._post_osv_batch([dependency]) == [[]]
     assert seen["url"] == audit.OSV_QUERY_URL
@@ -216,7 +264,7 @@ def test_osv_rejects_oversized_or_mismatched_responses(monkeypatch, body):
             return body
 
     monkeypatch.setattr(audit.urllib.request, "urlopen", lambda *args, **kwargs: Response())
-    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt")
+    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt", "registry-pypi")
 
     with pytest.raises(ValueError):
         audit._post_osv_batch([dependency])
@@ -383,7 +431,7 @@ def test_osv_request_payload_has_a_byte_limit(monkeypatch):
         "urlopen",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network request was sent")),
     )
-    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt")
+    dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt", "registry-pypi")
 
     with pytest.raises(ValueError, match="request exceeded"):
         audit._post_osv_batch([dependency])
