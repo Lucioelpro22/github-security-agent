@@ -344,7 +344,6 @@ def _parse_yarn_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
     return records, False
 
 
-
 MAX_PNPM_YAML_EVENTS = 100_000
 MAX_PNPM_YAML_DEPTH = 64
 MAX_PNPM_YAML_ALIASES = 64
@@ -396,7 +395,9 @@ def _pnpm_locator(key: str) -> tuple[str, str, str]:
     locator = key.lstrip("/")
     peer_suffix = locator.find("(")
     if peer_suffix >= 0:
-        if not locator.endswith(")") or not re.fullmatch(r"\([^()]+\)(?:\([^()]+\))*", locator[peer_suffix:]):
+        if not locator.endswith(")") or not re.fullmatch(
+            r"\([^()]+\)(?:\([^()]+\))*", locator[peer_suffix:]
+        ):
             raise ValueError("invalid pnpm peer locator")
         locator = locator[:peer_suffix]
     if locator.startswith("@"):
@@ -442,7 +443,10 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
     try:
         for event in yaml.parse(text, Loader=_StrictPnpmLoader):
             event_count += 1
-            if event_count > MAX_PNPM_YAML_EVENTS or time.monotonic() - started_at > MAX_SCAN_SECONDS:
+            if (
+                event_count > MAX_PNPM_YAML_EVENTS
+                or time.monotonic() - started_at > MAX_SCAN_SECONDS
+            ):
                 raise ValueError("pnpm YAML resource limit exceeded")
             if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None:
                 raise ValueError("pnpm YAML aliases and anchors are not supported")
