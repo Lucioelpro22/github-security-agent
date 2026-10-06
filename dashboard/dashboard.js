@@ -6,6 +6,7 @@ const MAX_REPORT_BYTES = 5 * 1024 * 1024;
 const ALERT_CLASSES = new Set(["dependabot", "code_scanning", "secret_scanning"]);
 const SEVERITIES = new Set(["low", "medium", "high", "critical", "unknown"]);
 const CONFIDENCES = new Set(["low", "medium", "high"]);
+const LOCAL_SEVERITIES = new Set(["low", "medium", "high"]);
 const PROVIDERS = new Set(["empty", "github"]);
 const ECOSYSTEMS = new Set(["PyPI", "npm", "crates.io"]);
 
@@ -114,7 +115,7 @@ function normalizeLocalScan(report) {
     }
     const severity = cleanText(item.severity, "");
     const confidence = cleanText(item.confidence, "");
-    if (!new Set(["low", "medium", "high"]).has(severity) || !CONFIDENCES.has(confidence)) {
+    if (!LOCAL_SEVERITIES.has(severity) || !CONFIDENCES.has(confidence)) {
       throw new Error("El informe local contiene severidad o confianza desconocida.");
     }
     if (!Number.isSafeInteger(item.line) || item.line < 1) {
@@ -380,7 +381,9 @@ function renderReport(report, doc) {
       "Mostrando " + filtered.length + " de " + report.findings.length;
     const empty = doc.getElementById("empty-results");
     empty.hidden = filtered.length !== 0;
-    if (report.report_type === "dependency_audit" && report.lookup === "complete") {
+    if (report.report_type === "dependency_audit" && report.status === "incomplete") {
+      empty.textContent = "El informe está incompleto; revisá la advertencia antes de interpretar la lista de avisos.";
+    } else if (report.report_type === "dependency_audit" && report.lookup === "complete") {
       empty.textContent = "OSV no devolvió avisos para las versiones inventariadas; no equivale a ausencia de vulnerabilidades.";
     } else if (report.report_type === "dependency_audit" && report.lookup === "not_requested") {
       empty.textContent = "No se consultaron avisos OSV. El inventario de paquetes aparece abajo.";
