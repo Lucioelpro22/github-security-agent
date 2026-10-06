@@ -41,6 +41,35 @@ _SENSITIVE_NAME = re.compile(
 )
 _SENSITIVE_VERSION_TOKEN = re.compile(r"(?i)(?<![A-Za-z0-9])[A-Za-z0-9]{32,}(?![A-Za-z0-9])")
 MAX_REQUEST_BYTES = 64_000
+_MANIFEST_COMPANIONS = {
+    "pyproject.toml": {
+        "requirements.txt",
+        "requirements-lock.txt",
+        "poetry.lock",
+        "uv.lock",
+        "Pipfile.lock",
+    },
+    "package.json": {"package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml"},
+    "composer.json": {"composer.lock"},
+    "Pipfile": {"Pipfile.lock"},
+    "Cargo.toml": {"Cargo.lock"},
+    "go.mod": {"go.sum"},
+    "Gemfile": set(),
+    "pom.xml": set(),
+}
+
+
+def _requirements_have_unresolved_entries(text: str) -> bool:
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or _PINNED.fullmatch(line):
+            continue
+        if line.startswith(
+            ("--index-url", "--extra-index-url", "--find-links", "-i ", "--trusted-host")
+        ):
+            continue
+        return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -867,6 +896,25 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             if name not in {".git", ".venv", "venv", "node_modules"}
             and not (Path(current) / name).is_symlink()
         )
+        for declaration, companions in _MANIFEST_COMPANIONS.items():
+            if declaration in files and not any(
+                companion in files and not (Path(current) / companion).is_symlink()
+                for companion in companions
+            ):
+                declaration_path = Path(current) / declaration
+                if declaration_path.is_symlink():
+                    continue
+                relative_declaration = declaration_path.relative_to(base).as_posix()
+                errors.append(
+                    f"{relative_declaration}: no supported companion lockfile; dependency coverage unknown"
+                )
+                incomplete = True
+                if len(errors) >= MAX_LOCKFILES:
+                    errors.append("uncovered manifest count reached configured limit")
+                    limit_reached = True
+                    break
+        if limit_reached:
+            break
         for name in sorted(files):
             if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
                 errors.append("scan time limit reached")
@@ -888,6 +936,14 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 remaining_dependencies = MAX_DEPENDENCIES - len(dependencies)
                 parsed, truncated = _parse_lockfile(path, relative, text, remaining_dependencies)
                 dependencies.extend(parsed)
+                if name in {
+                    "requirements.txt",
+                    "requirements-lock.txt",
+                } and _requirements_have_unresolved_entries(text):
+                    errors.append(
+                        f"{relative}: non-exact or unsupported requirements were not inventoried"
+                    )
+                    incomplete = True
                 if truncated:
                     errors.append("dependency count reached configured limit")
                     incomplete = True

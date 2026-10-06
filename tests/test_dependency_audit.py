@@ -15,7 +15,7 @@ def test_inventory_is_local_and_parses_exact_requirements(tmp_path, monkeypatch)
 
     report = audit.audit_dependencies(tmp_path)
 
-    assert report.status == "complete"
+    assert report.status == "incomplete"
     assert report.advisory_lookup == "not_requested"
     assert [(item.name, item.version, item.ecosystem) for item in report.dependencies] == [
         ("requests", "2.31.0", "PyPI")
@@ -888,3 +888,71 @@ def test_pipfile_retains_pins_across_categories_without_evaluating_markers(tmp_p
     report = audit.audit_dependencies(tmp_path)
     assert report.status == "complete"
     assert {d.version for d in report.dependencies if d.name == "requests"} == {"2.30.0", "2.31.0"}
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        "pyproject.toml",
+        "package.json",
+        "composer.json",
+        "Pipfile",
+        "Cargo.toml",
+        "go.mod",
+        "Gemfile",
+        "pom.xml",
+    ],
+)
+def test_uncovered_manifest_is_not_a_clean_dependency_audit(tmp_path, manifest):
+    (tmp_path / manifest).write_text("untrusted declarations are not executed")
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert "coverage unknown" in report.errors[0]
+
+
+def test_companion_must_be_in_same_directory(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[project]")
+    sub = tmp_path / "nested"
+    sub.mkdir()
+    (sub / "requirements.txt").write_text("requests==2.31.0")
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert len(report.dependencies) == 1
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0")
+    assert audit.audit_dependencies(tmp_path).status == "complete"
+
+
+@pytest.mark.parametrize(
+    "entry", ["flask>=3", "-r nested.txt", "-e .", "requests", "requests==1.*"]
+)
+def test_unresolved_requirements_preserve_exact_inventory(tmp_path, entry):
+    (tmp_path / "requirements.txt").write_text("urllib3==2.2.0\n" + entry)
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert [d.name for d in report.dependencies] == ["urllib3"]
+    assert "unsupported requirements" in report.errors[0]
+
+
+def test_uncovered_manifest_budget(tmp_path, monkeypatch):
+    monkeypatch.setattr(audit, "MAX_LOCKFILES", 1)
+    (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "package.json").write_text("{}")
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert len(report.errors) == 2
+    assert "configured limit" in report.errors[-1]
+
+
+def test_symlink_companion_does_not_claim_dependency_coverage(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[project]")
+    outside = tmp_path / "external.txt"
+    outside.write_text("requests==2.31.0")
+    try:
+        (tmp_path / "requirements.txt").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert "coverage unknown" in report.errors[0]

@@ -1,4 +1,4 @@
-"""Command-line entry point; all commands are read-only in v0.1.0."""
+"""Command-line entry point; all commands are read-only in v0.2.0."""
 
 import argparse
 import os
