@@ -143,7 +143,7 @@ test("enforces the alert-count and per-finding schema limits", () => {
     alert_class: "dependabot",
     severity: "low",
   }));
-  assert.throws(() => parseReport(JSON.stringify(sample({ findings: tooMany }))), /3\.000/);
+  assert.throws(() => parseReport(JSON.stringify(sample({ findings: tooMany }))), /5\.000/);
   assert.throws(
     () =>
       parseReport(
@@ -208,7 +208,7 @@ test("oversized imports are rejected before the file is read", async () => {
   await fileInput.handlers.change();
   assert.equal(wasRead, false);
   assert.equal(fileInput.value, "");
-  assert.match(doc.getElementById("status").textContent, /5 MB/);
+  assert.match(doc.getElementById("status").textContent, /5 MiB/);
 });
 
 
