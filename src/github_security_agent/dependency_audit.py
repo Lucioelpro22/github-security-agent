@@ -262,8 +262,15 @@ def _yarn_selector_name(selector: str) -> tuple[str, bool]:
 def _yarn_source_kind(resolved: str | None, *, classic: bool, aliased: bool) -> str:
     if not classic or aliased or resolved is None:
         return "unknown"
-    if _public_registry_url(resolved, "registry.npmjs.org", set()) or _public_registry_url(
-        resolved, "registry.yarnpkg.com", set()
+    try:
+        parsed = urlsplit(resolved)
+    except ValueError:
+        return "registry-other"
+    if parsed.fragment and not re.fullmatch(r"[A-Fa-f0-9]{40}", parsed.fragment):
+        return "registry-other"
+    public_url = parsed._replace(fragment="").geturl()
+    if _public_registry_url(public_url, "registry.npmjs.org", set()) or _public_registry_url(
+        public_url, "registry.yarnpkg.com", set()
     ):
         return "registry-npm"
     return "registry-other"
