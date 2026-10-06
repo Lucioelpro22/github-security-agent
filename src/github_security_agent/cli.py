@@ -50,7 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     dependency_parser.add_argument(
         "--query-osv",
         action="store_true",
-        help="send package names, ecosystems, and exact versions to OSV.dev",
+        help=(
+            "send package names, ecosystems, and exact versions to OSV.dev; "
+            "identifiers may be private"
+        ),
     )
     return parser
 
