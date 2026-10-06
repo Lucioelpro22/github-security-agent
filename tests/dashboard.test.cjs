@@ -332,6 +332,15 @@ test("rejects malformed partial reports and oversized normalized item lists", ()
   assert.throws(() => parseReport(JSON.stringify(dependencySample({
     advisories: Array.from({ length: MAX_FINDINGS + 1 }, () => ({})),
   }))), /límite de 5.000/);
+  assert.throws(() => parseReport(JSON.stringify(dependencySample({
+    dependencies: Array.from({ length: 2500 }, () => ({
+      name: "pkg",
+      version: "1.0.0",
+      ecosystem: "npm",
+      manifest: "package-lock.json",
+    })),
+    advisories: Array.from({ length: 2501 }, () => ({})),
+  }))), /total combinado/);
 });
 
 test("viewer has no remote resources or unsafe HTML insertion APIs", () => {
