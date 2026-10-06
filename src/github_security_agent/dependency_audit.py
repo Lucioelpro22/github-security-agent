@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 MAX_LOCKFILE_BYTES = 2_000_000
 MAX_TOTAL_BYTES = 20_000_000
@@ -349,7 +349,7 @@ MAX_PNPM_YAML_DEPTH = 64
 MAX_PNPM_YAML_ALIASES = 64
 
 
-class _StrictPnpmLoader(yaml.SafeLoader):
+class _StrictPnpmLoader(yaml.SafeLoader):  # type: ignore[misc]
     """Safe YAML loader with duplicate-key, depth, and node limits."""
 
     yaml_implicit_resolvers: ClassVar[dict[Any, Any]] = {}
@@ -388,7 +388,7 @@ class _StrictPnpmLoader(yaml.SafeLoader):
             if not isinstance(key, str) or key in seen:
                 raise yaml.YAMLError("duplicate or non-string YAML mapping key")
             seen.add(key)
-        return super().construct_mapping(node, deep=deep)
+        return cast(dict[str, Any], super().construct_mapping(node, deep=deep))
 
 
 def _pnpm_locator(key: str) -> tuple[str, str, str]:
