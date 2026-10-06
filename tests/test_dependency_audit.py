@@ -122,11 +122,17 @@ def test_yarn_berry_inventory_skips_osv_without_registry_provenance(tmp_path, mo
     }
 
 
-def test_malformed_yarn_lockfile_marks_report_incomplete(tmp_path):
-    (tmp_path / "yarn.lock").write_text(
-        "# yarn lockfile v1\nnot-a-package-selector:\n  version \"1.0.0\"\n",
-        encoding="utf-8",
-    )
+@pytest.mark.parametrize(
+    "lock_body",
+    [
+        "# yarn lockfile v1\\nnot-a-package-selector:\\n  version \\"1.0.0\\"\\n",
+        "# yarn lockfile v1\\n\\\"foo@\\\":\\n  version \\"1.0.0\\"\\n",
+        "# yarn lockfile v1\\n\\\"foo@npm:\\":\\n  version: 1.0.0\\n",
+        "# yarn lockfile v1\\n\\\"foo@^1.0.0\\\":\\n  version \\"\\"\\n",
+    ],
+)
+def test_malformed_yarn_lockfile_marks_report_incomplete(tmp_path, lock_body):
+    (tmp_path / "yarn.lock").write_text(lock_body, encoding="utf-8")
 
     report = audit.audit_dependencies(tmp_path)
 
