@@ -473,9 +473,9 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
         snapshots = document.get("snapshots")
         if not all(isinstance(item, dict) for item in (importers, packages, snapshots)):
             raise ValueError("invalid pnpm lockfile structure")
-        for snapshot_key in snapshots:
-            if not isinstance(snapshot_key, str):
-                raise ValueError("invalid pnpm snapshot locator")
+        for snapshot_key, snapshot in snapshots.items():
+            if not isinstance(snapshot_key, str) or not isinstance(snapshot, dict):
+                raise ValueError("invalid pnpm snapshot")
             name, version, package_key = _pnpm_locator(snapshot_key)
             metadata = packages.get(package_key)
             if not isinstance(metadata, dict):
