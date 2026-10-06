@@ -20,7 +20,8 @@ El CLI solo emite JSON si el escaneo terminó correctamente. La salida incluye `
 - El visor conserva solo campos conocidos del informe; ignora campos extra como `secret` y `metadata`.
 - Los valores, incluidos títulos remotos, se insertan como texto con `textContent`; no se interpreta HTML ni Markdown.
 - El HTML usa una política CSP local y no referencia CDN, fuentes, imágenes ni servicios remotos.
-- Muestra conteos por categoría y severidad, búsqueda de texto y filtros por categoría/severidad.
+- Resume hallazgos por las tres categorías que entrega hoy el proveedor (Dependabot, Code Scanning y Secret Scanning), además de conteos por cada severidad; incluye búsqueda y filtros.
+- El proveedor actual aún no recopila alertas de Actions.
 - Que un informe tenga estructura válida no prueba su autenticidad. Revisá que provenga de tu ejecución local del CLI.
 - El JSON puede incluir nombres de repositorios, dependencias, reglas y títulos de alertas. Tratá el archivo como información privada y eliminálo al terminar si no necesitás conservarlo.
 
