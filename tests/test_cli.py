@@ -77,4 +77,8 @@ def test_github_provider_uses_environment_token_and_keeps_default_offline(
     assert all(request.get_method() == "GET" for request in requests)
     assert all(request.get_header("Authorization") == f"Bearer {token}" for request in requests)
     assert token not in captured.out
-    assert json.loads(captured.out)["findings"] == []
+    payload = json.loads(captured.out)
+    assert payload["findings"] == []
+    assert payload["schema_version"] == 1
+    assert payload["provider"] == "github"
+    assert payload["status"] == "complete"
