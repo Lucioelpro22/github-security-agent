@@ -20,7 +20,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
-from typing import Any
+from typing import Any, ClassVar
 
 MAX_LOCKFILE_BYTES = 2_000_000
 MAX_TOTAL_BYTES = 20_000_000
@@ -353,7 +353,7 @@ MAX_PNPM_YAML_ALIASES = 64
 class _StrictPnpmLoader(yaml.SafeLoader):
     """Safe YAML loader with duplicate-key, depth, and node limits."""
 
-    yaml_implicit_resolvers = {}
+    yaml_implicit_resolvers: ClassVar[dict[Any, Any]] = {}
 
     def __init__(self, stream: Any) -> None:
         super().__init__(stream)
