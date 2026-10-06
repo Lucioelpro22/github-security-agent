@@ -57,7 +57,7 @@ def test_parses_yarn_classic_and_queries_only_public_resolved_urls(tmp_path, mon
         '# yarn lockfile v1\n\n'
         '"left-pad@^1.0.0":\n'
         '  version "1.3.0"\n'
-        '  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#hash"\n'
+        '  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#0123456789012345678901234567890123456789"\n'
         '  dependencies:\n'
         '    nested "^2.0.0"\n'
         '\n'
