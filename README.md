@@ -23,7 +23,7 @@ github-security-agent scan-local . --format json > local-report.json
 github-security-agent audit-dependencies . --format json > dependency-report.json
 ```
 
-El visor admite contratos JSON v1 para los tres tipos. Procesa archivos de hasta 5 MiB y 5.000 elementos por colección, no los envía a servicios y no persiste el contenido. Los informes incompletos muestran una advertencia; en auditorías de dependencias, la severidad de OSV se mantiene como desconocida porque el informe fuente no incluye ese dato. Los informes pueden contener rutas, nombres de paquetes y títulos de avisos; tratá el JSON como información privada.
+El visor admite contratos JSON v1 para los tres tipos. Procesa archivos de hasta 5 MiB y 5.000 elementos por informe (paquetes más avisos en auditorías), no los envía a servicios y no persiste el contenido. Los informes incompletos muestran una advertencia; en auditorías de dependencias, la severidad de OSV se mantiene como desconocida porque el informe fuente no incluye ese dato. Los informes pueden contener rutas, nombres de paquetes y títulos de avisos; tratá el JSON como información privada.
 
 ## Reglas locales iniciales
 
