@@ -54,17 +54,17 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
 
 def test_parses_yarn_classic_and_queries_only_public_resolved_urls(tmp_path, monkeypatch):
     (tmp_path / "yarn.lock").write_text(
-        '# yarn lockfile v1\n\n'
+        "# yarn lockfile v1\n\n"
         '"left-pad@^1.0.0":\n'
         '  version "1.3.0"\n'
         '  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#0123456789012345678901234567890123456789"\n'
-        '  dependencies:\n'
+        "  dependencies:\n"
         '    nested "^2.0.0"\n'
-        '\n'
+        "\n"
         '"@scope/pkg@^1.0.0", "@scope/pkg@~1.2.0":\n'
         '  version "1.2.4"\n'
         '  resolved "https://registry.npmjs.org/@scope/pkg/-/pkg-1.2.4.tgz"\n'
-        '\n'
+        "\n"
         '"private-lib@^1.0.0":\n'
         '  version "1.0.1"\n'
         '  resolved "https://packages.internal/private-lib.tgz"\n',
@@ -92,17 +92,17 @@ def test_parses_yarn_classic_and_queries_only_public_resolved_urls(tmp_path, mon
 
 def test_yarn_berry_inventory_skips_osv_without_registry_provenance(tmp_path, monkeypatch):
     (tmp_path / "yarn.lock").write_text(
-        '__metadata:\n'
-        '  version: 8\n'
-        '\n'
+        "__metadata:\n"
+        "  version: 8\n"
+        "\n"
         '"@scope/pkg@npm:^1.0.0":\n'
-        '  version: 1.2.3\n'
+        "  version: 1.2.3\n"
         '  resolution: "@scope/pkg@npm:1.2.3"\n'
-        '  dependencies:\n'
-        '    nested: ^2.0.0\n'
-        '\n'
+        "  dependencies:\n"
+        "    nested: ^2.0.0\n"
+        "\n"
         '"local-lib@workspace:.":\n'
-        '  version: 0.0.0-use.local\n'
+        "  version: 0.0.0-use.local\n"
         '  resolution: "local-lib@workspace:."\n',
         encoding="utf-8",
     )
@@ -139,6 +139,7 @@ def test_malformed_yarn_lockfile_marks_report_incomplete(tmp_path, lock_body):
     assert report.status == "incomplete"
     assert report.dependencies == ()
     assert report.errors == ("yarn.lock: could not safely parse lockfile",)
+
 
 def test_parses_uv_and_go_lockfiles(tmp_path):
     (tmp_path / "uv.lock").write_text(
