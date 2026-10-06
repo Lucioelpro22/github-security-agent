@@ -2,7 +2,7 @@
 
 const MAX_FINDINGS = 3000;
 const MAX_TEXT_LENGTH = 500;
-const ALERT_CLASSES = new Set(["dependabot", "code_scanning", "secret_scanning", "actions"]);
+const ALERT_CLASSES = new Set(["dependabot", "code_scanning", "secret_scanning"]);
 const SEVERITIES = new Set(["low", "medium", "high", "critical", "unknown"]);
 const PROVIDERS = new Set(["empty", "github"]);
 
@@ -130,6 +130,10 @@ function renderReport(report, doc) {
     ["Dependabot", report.findings.filter((f) => f.alert_class === "dependabot").length],
     ["Code Scanning", report.findings.filter((f) => f.alert_class === "code_scanning").length],
     ["Secret Scanning", report.findings.filter((f) => f.alert_class === "secret_scanning").length],
+    ["Severidad crítica", report.findings.filter((f) => f.severity === "critical").length],
+    ["Severidad alta", report.findings.filter((f) => f.severity === "high").length],
+    ["Severidad media", report.findings.filter((f) => f.severity === "medium").length],
+    ["Severidad baja", report.findings.filter((f) => f.severity === "low").length],
     ["Severidad desconocida", report.findings.filter((f) => f.severity === "unknown").length],
   ];
   for (const card of cards) {
@@ -202,6 +206,7 @@ function initDashboard(doc) {
     status.dataset.state = "";
     status.textContent = "Validando el informe…";
     const file = fileInput.files && fileInput.files[0];
+    fileInput.value = "";
     if (!file) {
       status.textContent = "Seleccioná un informe completo compatible para comenzar.";
       return;
