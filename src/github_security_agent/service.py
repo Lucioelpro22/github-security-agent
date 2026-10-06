@@ -14,7 +14,12 @@ def scan(target: RepositoryTarget, provider: GitHubSecurityProvider) -> list[Sec
     return list(provider.list_findings(target))
 
 
-def report_json(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -> str:
+def report_json(
+    target: RepositoryTarget,
+    findings: Iterable[SecurityFinding],
+    *,
+    provider: str = "unknown",
+) -> str:
     """Serialize a stable, secret-free inventory for automation."""
 
     rows = [
@@ -32,7 +37,14 @@ def report_json(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -
         for finding in findings
     ]
     return json.dumps(
-        {"repository": target.full_name, "base_branch": target.base_branch, "findings": rows},
+        {
+            "schema_version": 1,
+            "provider": provider,
+            "status": "complete",
+            "repository": target.full_name,
+            "base_branch": target.base_branch,
+            "findings": rows,
+        },
         indent=2,
         sort_keys=True,
     )
