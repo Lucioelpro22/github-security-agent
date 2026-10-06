@@ -13,6 +13,7 @@ import os
 import re
 import stat
 import tomllib
+import yaml
 import time
 import urllib.error
 import urllib.request
@@ -343,6 +344,149 @@ def _parse_yarn_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
     return records, False
 
 
+
+MAX_PNPM_YAML_EVENTS = 100_000
+MAX_PNPM_YAML_DEPTH = 64
+MAX_PNPM_YAML_ALIASES = 64
+
+
+class _StrictPnpmLoader(yaml.SafeLoader):
+    """Safe YAML loader with duplicate-key, depth, and node limits."""
+
+    yaml_implicit_resolvers = {}
+
+    def __init__(self, stream: Any) -> None:
+        super().__init__(stream)
+        self.node_count = 0
+        self.depth = 0
+        self.alias_count = 0
+        self.started_at = time.monotonic()
+
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        if self.check_event(yaml.AliasEvent):
+            self.alias_count += 1
+            if self.alias_count > MAX_PNPM_YAML_ALIASES:
+                raise yaml.YAMLError("too many YAML aliases")
+        self.depth += 1
+        self.node_count += 1
+        if self.depth > MAX_PNPM_YAML_DEPTH or self.node_count > MAX_PNPM_YAML_EVENTS:
+            raise yaml.YAMLError("YAML resource limit exceeded")
+        if time.monotonic() - self.started_at > MAX_SCAN_SECONDS:
+            raise yaml.YAMLError("YAML parse time limit exceeded")
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self.depth -= 1
+
+    def construct_mapping(self, node: Any, deep: bool = False) -> dict[str, Any]:
+        if not isinstance(node, yaml.MappingNode):
+            raise yaml.YAMLError("expected a YAML mapping")
+        seen: set[str] = set()
+        for key_node, _value_node in node.value:
+            if not isinstance(key_node, yaml.ScalarNode) or key_node.value == "<<":
+                raise yaml.YAMLError("unsupported YAML mapping key")
+            key = self.construct_object(key_node, deep=True)
+            if not isinstance(key, str) or key in seen:
+                raise yaml.YAMLError("duplicate or non-string YAML mapping key")
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
+def _pnpm_locator(key: str) -> tuple[str, str, str]:
+    locator = key.lstrip("/")
+    peer_suffix = locator.find("(")
+    if peer_suffix >= 0:
+        locator = locator[:peer_suffix]
+    if locator.startswith("@"):
+        slash = locator.find("/")
+        separator = locator.find("@", slash + 1) if slash >= 0 else -1
+        if slash <= 1 or separator <= slash + 1:
+            raise ValueError("invalid pnpm package locator")
+    else:
+        separator = locator.find("@")
+        if separator <= 0:
+            raise ValueError("invalid pnpm package locator")
+    name, version = locator[:separator], locator[separator + 1 :]
+    if not version or not _SAFE_VERSION.fullmatch(version):
+        raise ValueError("invalid pnpm package version")
+    if not (
+        _SAFE_SCOPED_NAME.fullmatch(name)
+        if name.startswith("@")
+        else _SAFE_UNSCOPED_NAME.fullmatch(name)
+    ):
+        raise ValueError("invalid pnpm package name")
+    return name, version, locator
+
+
+def _pnpm_source_kind(metadata: Any) -> str:
+    if not isinstance(metadata, dict):
+        return "unknown"
+    resolution = metadata.get("resolution")
+    if not isinstance(resolution, dict):
+        return "unknown"
+    tarball = resolution.get("tarball")
+    if not isinstance(tarball, str):
+        return "unknown"
+    return (
+        "registry-npm"
+        if _public_registry_url(tarball, "registry.npmjs.org", set())
+        else "registry-other"
+    )
+
+
+def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    event_count = 0
+    started_at = time.monotonic()
+    try:
+        for event in yaml.parse(text, Loader=_StrictPnpmLoader):
+            event_count += 1
+            if event_count > MAX_PNPM_YAML_EVENTS or time.monotonic() - started_at > MAX_SCAN_SECONDS:
+                raise ValueError("pnpm YAML resource limit exceeded")
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None:
+                raise ValueError("pnpm YAML aliases and anchors are not supported")
+        documents: list[Any] = []
+        loader = _StrictPnpmLoader(text)
+        try:
+            while loader.check_data():
+                if len(documents) >= 2:
+                    raise ValueError("too many pnpm YAML documents")
+                documents.append(loader.get_data())
+        finally:
+            loader.dispose()
+    except yaml.YAMLError as error:
+        raise ValueError("invalid pnpm YAML") from error
+    if not documents or any(not isinstance(document, dict) for document in documents):
+        raise ValueError("pnpm lockfile must contain mapping documents")
+
+    unique: dict[tuple[str, str], Dependency] = {}
+    for document in documents:
+        if document.get("lockfileVersion") != "9.0":
+            raise ValueError("unsupported pnpm lockfile version")
+        importers = document.get("importers")
+        packages = document.get("packages")
+        snapshots = document.get("snapshots")
+        if not all(isinstance(item, dict) for item in (importers, packages, snapshots)):
+            raise ValueError("invalid pnpm lockfile structure")
+        for snapshot_key in snapshots:
+            if not isinstance(snapshot_key, str):
+                raise ValueError("invalid pnpm snapshot locator")
+            name, version, package_key = _pnpm_locator(snapshot_key)
+            metadata = packages.get(package_key)
+            if not isinstance(metadata, dict):
+                raise ValueError("pnpm snapshot has no package metadata")
+            identity = (name, version)
+            source_kind = _pnpm_source_kind(metadata)
+            if identity in unique:
+                previous = unique[identity]
+                if previous.source_kind != source_kind:
+                    unique[identity] = Dependency(name, version, "npm", path, "unknown")
+                continue
+            if len(unique) >= limit:
+                return list(unique.values()), True
+            unique[identity] = Dependency(name, version, "npm", path, source_kind)
+    return list(unique.values()), False
+
+
 def _parse_go_sum(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     records: list[Dependency] = []
     for line in text.splitlines():
@@ -391,6 +535,8 @@ def _parse_lockfile(
         return _parse_requirements(text, relative, limit)
     if path.name == "yarn.lock":
         return _parse_yarn_lock(text, relative, limit)
+    if path.name == "pnpm-lock.yaml":
+        return _parse_pnpm_lock(text, relative, limit)
     if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         data = json.loads(text)
         records: list[Dependency] = []
@@ -533,6 +679,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "package-lock.json",
         "npm-shrinkwrap.json",
         "yarn.lock",
+        "pnpm-lock.yaml",
         "poetry.lock",
         "uv.lock",
         "Cargo.lock",
