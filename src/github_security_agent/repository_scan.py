@@ -335,7 +335,10 @@ def scan_repository(root: str | Path) -> ScanReport:
 
 
 def report_json(report: ScanReport) -> str:
-    return json.dumps(asdict(report), indent=2, sort_keys=True)
+    payload = asdict(report)
+    payload["schema_version"] = 1
+    payload["report_type"] = "local_scan"
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 def report_markdown(report: ScanReport) -> str:
