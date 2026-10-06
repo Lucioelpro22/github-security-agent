@@ -346,7 +346,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         if limit_reached:
             break
 
-    unique = {(d.ecosystem, d.name, d.version, d.manifest): d for d in dependencies}
+    unique = {(d.ecosystem, d.name, d.version, d.manifest, d.source_kind): d for d in dependencies}
     dependencies = sorted(
         unique.values(), key=lambda d: (d.ecosystem, d.name.lower(), d.version, d.manifest)
     )
