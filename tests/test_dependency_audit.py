@@ -621,9 +621,9 @@ def test_pnpm_two_document_lockfile_includes_environment_packages(tmp_path):
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {foo@1.0.0: {}}\nsnapshots: {foo@1.0.0: invalid}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: &items {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: *items\n",
-        "lockfileVersion: '9.0'\\nimporters: {'.': {}}\\n"
-        "packages: {'foo@git+https://example.com/repo#abcdef': {resolution: {commit: abcdef}}}\\n"
-        "snapshots: {'foo@git+https://example.com/repo#abcdef': {}}\\n",
+        "lockfileVersion: '9.0'\nimporters: {'.': {}}\n"
+        "packages: {'foo@git+https://example.com/repo#abcdef': {resolution: {commit: abcdef}}}\n"
+        "snapshots: {'foo@git+https://example.com/repo#abcdef': {}}\n",
         "!!python/object/apply:os.system ['echo unsafe']",
         "- not-a-mapping",
     ],
