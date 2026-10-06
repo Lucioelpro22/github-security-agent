@@ -13,6 +13,16 @@ github-security-agent scan-local . --format markdown
 
 El comando `scan-local` analiza el directorio local como datos: no ejecuta scripts, instala dependencias ni hace llamadas de red. Genera un informe Markdown o JSON. Si el escaneo omite archivos por límites o errores de lectura, marca el resultado como incompleto y devuelve código de salida 2.
 
+## Visor local de informes
+
+Generá un informe JSON y abrí `dashboard/index.html` en el navegador para seleccionarlo:
+
+```bash
+github-security-agent scan --owner OWNER --repo REPOSITORY --provider github --format json > security-report.json
+```
+
+El visor funciona como archivo estático: no inicia un servidor, no contiene el token y no realiza conexiones. Acepta informes completos de esquema 1 de hasta 5 MB y 3.000 hallazgos; aplica filtros por texto, categoría y severidad. Los informes inválidos limpian la vista y no conservan el resultado anterior. El JSON puede contener nombres de repositorios, dependencias y títulos de alertas; tratá el archivo como información privada.
+
 ## Reglas locales iniciales
 
 - Detecta algunos formatos conocidos de tokens y asignaciones de credenciales; nunca imprime el valor detectado.

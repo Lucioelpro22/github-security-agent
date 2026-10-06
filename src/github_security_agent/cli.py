@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"GitHub scan incomplete: {exc}.\n")
         return 2
     if args.format == "json":
-        sys.stdout.write(report_json(target, findings))
+        sys.stdout.write(report_json(target, findings, provider=args.provider))
     else:
         sys.stdout.write(report_markdown(target, findings))
     return 0

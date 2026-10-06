@@ -10,6 +10,7 @@ Assets include GitHub tokens, repository metadata, security findings, and genera
 - The token is not copied into findings, reports, or error messages. Secret scanning requests set \`hide_secret=true\`, and the normalizer ignores any literal secret field.
 - API responses are bounded to 2 MB; pagination is bounded to 10 pages per alert class, 100 results per page, and 10-second request timeouts.
 - Pagination links are restricted to HTTPS \`api.github.com\` and the expected endpoint. Errors, denied permissions, unsupported alert features, and limits fail closed with an incomplete-scan exit status.
-- Remote alert text is untrusted. Markdown output escapes HTML and Markdown syntax before rendering; a future dashboard must render remote fields as text rather than executable HTML.
+- Remote alert text is untrusted. Markdown output escapes HTML and Markdown syntax; the static report viewer inserts values only through `textContent` and never interprets HTML or Markdown.
+- The dashboard viewer runs from a local static file, has no server, API token, persistence, or network access; it accepts only complete schema-version-1 JSON up to 5 MB and 3,000 findings, and drops fields outside its allowlist.
 - Tests use mocked responses and do not require real credentials or network calls.
 - Human approval remains required for any future write capability.

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <meta name="referrer" content="no-referrer">
+    <title>GitHub Security Agent · Informe local</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <script src="dashboard.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">GITHUB SECURITY AGENT</p>
+        <h1>Visor local de hallazgos</h1>
+        <p class="lede">
+          Abrí un informe JSON de `scan` o `plan` con esquema compatible. Los informes de `scan-local` y `audit-dependencies` aún no se admiten.
+        </p>
+        <input id="report-file" type="file" accept=".json,application/json">
+        <label class="file-picker" for="report-file">Seleccionar informe JSON</label>
+        <p class="privacy-note">Sin token, servidor, almacenamiento local ni conexiones de red.</p>
+      </header>
+
+      <section id="status" class="status" role="status" aria-live="polite">
+        Seleccioná un informe completo compatible para comenzar.
+      </section>
+
+      <section id="dashboard" hidden aria-label="Resumen del informe">
+        <div class="report-meta">
+          <div>
+            <p class="eyebrow">INFORME CARGADO</p>
+            <h2 id="repository-name"></h2>
+          </div>
+          <p id="provider-name" class="provider-badge"></p>
+        </div>
+
+        <div id="summary-cards" class="summary-grid" aria-label="Conteos de hallazgos"></div>
+
+        <section class="results" aria-labelledby="results-heading">
+          <div class="results-heading">
+            <div>
+              <p class="eyebrow">INVENTARIO</p>
+              <h2 id="results-heading">Hallazgos</h2>
+            </div>
+            <p id="result-count" class="result-count"></p>
+          </div>
+
+          <div class="filters">
+            <label>
+              Buscar
+              <input id="search" type="search" autocomplete="off" placeholder="Título, ID, dependencia…">
+            </label>
+            <label>
+              Categoría
+              <select id="class-filter">
+                <option value="">Todas</option>
+                <option value="dependabot">Dependabot</option>
+                <option value="code_scanning">Code Scanning</option>
+                <option value="secret_scanning">Secret Scanning</option>
+              </select>
+            </label>
+            <label>
+              Severidad
+              <select id="severity-filter">
+                <option value="">Todas</option>
+                <option value="critical">Crítica</option>
+                <option value="high">Alta</option>
+                <option value="medium">Media</option>
+                <option value="low">Baja</option>
+                <option value="unknown">Desconocida</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Categoría</th>
+                  <th scope="col">ID</th>
+                  <th scope="col">Severidad</th>
+                  <th scope="col">Hallazgo</th>
+                  <th scope="col">Dependencia / regla</th>
+                </tr>
+              </thead>
+              <tbody id="finding-rows"></tbody>
+            </table>
+          </div>
+          <p id="empty-results" class="empty-results" hidden>No hay hallazgos que coincidan con estos filtros.</p>
+        </section>
+      </section>
+
+      <footer>
+        <p>Visor estático · Solo lectura · Los valores del informe se muestran como texto sin formato.</p>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -10,6 +10,6 @@ The agent separates target validation, read-only collection, normalized findings
 - API failures and configured limits fail the inventory instead of appearing as zero findings.
 - No secrets or full repository contents in findings.
 - Secret scanning requests use \`hide_secret=true\`; reports retain only the alert type.
-- Remote titles are untrusted input and are escaped for Markdown output.
+- Remote titles are untrusted input and are escaped for Markdown output; the static dashboard uses text-only DOM insertion.
 - Offline tests never require GitHub credentials.
 - Unknown data is reported as unknown, never as safe.
