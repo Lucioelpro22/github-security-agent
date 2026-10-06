@@ -285,6 +285,7 @@ test("normalizes incomplete local scans without exposing the absolute root", () 
   const row = doc.getElementById("finding-rows").children[0];
   assert.match(row.children[3].textContent, /<script>/);
   assert.match(row.children[4].textContent, /<img/);
+  assert.match(row.children[4].textContent, /Confianza: high/);
   assert.equal(doc.created.some((element) => ["img", "script", "a"].includes(element.tagName)), false);
 });
 
@@ -297,7 +298,8 @@ test("normalizes dependency inventories and OSV advisories without inventing sev
   assert.match(report.errors[0], /omitido por seguridad/);
   assert.doesNotMatch(JSON.stringify(report), /DROP_DEPENDENCY_TOKEN|secret/);
   const doc = fakeDocument();
-  renderReport(report, doc);
+  renderReport(parseReport(JSON.stringify(dependencySample({ errors: [] }))), doc);
+  assert.equal(doc.getElementById("report-warning").hidden, true);
   const advisoryRow = doc.getElementById("finding-rows").children[0];
   assert.match(advisoryRow.children[3].textContent, /<img/);
   const packageRow = doc.getElementById("dependency-rows").children[0];
