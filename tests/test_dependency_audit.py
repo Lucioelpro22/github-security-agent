@@ -631,6 +631,7 @@ def test_malformed_or_unsupported_pnpm_lockfiles_mark_report_incomplete(tmp_path
     assert report.dependencies == ()
     assert report.errors == ("pnpm-lock.yaml: could not safely parse lockfile",)
 
+
 @pytest.mark.parametrize(
     "locator",
     ["foo", "foo@", "foo@1.0.0(unclosed", "foo@not-a-version", "@scope@1.0.0"],
