@@ -216,7 +216,7 @@ def _yarn_selectors(header: str) -> list[str]:
         if escaped:
             current.append(char)
             escaped = False
-        elif quote == '"' and char == "\\\\":
+        elif quote == '"' and char == "\\":
             current.append(char)
             escaped = True
         elif quote is not None:
