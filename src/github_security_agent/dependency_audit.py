@@ -33,9 +33,7 @@ OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
 _SAFE_UNSCOPED_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 _SAFE_SCOPED_NAME = re.compile(r"^@[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$")
-_SAFE_GO_MODULE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._!~+-]{0,255}(?:/[A-Za-z0-9._!~+-]{1,255})*$"
-)
+_SAFE_GO_MODULE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._!~+-]{0,255}(?:/[A-Za-z0-9._!~+-]{1,255})*$")
 _SAFE_VERSION = re.compile(r"^v?\d[A-Za-z0-9.+!_-]{0,127}$")
 _SENSITIVE_NAME = re.compile(
     r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\b|xox[baprs]-|sk-[a-z0-9_-]{20,})"
@@ -117,9 +115,7 @@ def _cargo_source_kind(source: Any) -> str:
         registry = source.removeprefix("registry+")
         return (
             "registry-cratesio"
-            if _public_registry_url(
-                registry, "github.com", {"/rust-lang/crates.io-index"}
-            )
+            if _public_registry_url(registry, "github.com", {"/rust-lang/crates.io-index"})
             or _public_registry_url(registry, "index.crates.io", {""})
             else "registry-other"
         )
@@ -149,9 +145,9 @@ def _parse_requirements(text: str, path: str, limit: int) -> tuple[list[Dependen
     records: list[Dependency] = []
     lines = text.splitlines()
     alternate_index = any(
-        line.split("#", 1)[0].strip().startswith(
-            ("--index-url", "--extra-index-url", "--find-links", "-i ", "--trusted-host")
-        )
+        line.split("#", 1)[0]
+        .strip()
+        .startswith(("--index-url", "--extra-index-url", "--find-links", "-i ", "--trusted-host"))
         for line in lines
     )
     for line in lines:
@@ -257,7 +253,9 @@ def _parse_lockfile(
                     if len(records) >= limit:
                         return records, True
                     records.append(
-                        Dependency(name, version, "npm", relative, _npm_source_kind(value.get("resolved")))
+                        Dependency(
+                            name, version, "npm", relative, _npm_source_kind(value.get("resolved"))
+                        )
                     )
         if not records and isinstance(data, dict):
             return _walk_npm_dependencies(data.get("dependencies"), relative, limit)
