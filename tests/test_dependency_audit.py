@@ -572,7 +572,8 @@ def test_pnpm_v9_inventory_uses_snapshots_and_public_tarball_for_osv(tmp_path, m
 
     report = audit.audit_dependencies(tmp_path, query_osv=True)
 
-    assert report.status == "complete", report.errors
+    assert report.status == "incomplete"
+    assert report.advisory_lookup == "incomplete"
     assert {(item.name, item.version, item.source_kind) for item in report.dependencies} == {
         ("react", "19.0.0", "registry-npm"),
         ("@scope/public", "1.2.3", "registry-npm"),
@@ -629,3 +630,29 @@ def test_malformed_or_unsupported_pnpm_lockfiles_mark_report_incomplete(tmp_path
     assert report.status == "incomplete"
     assert report.dependencies == ()
     assert report.errors == ("pnpm-lock.yaml: could not safely parse lockfile",)
+
+
+
+@pytest.mark.parametrize(
+    "locator",
+    ["foo", "foo@", "foo@1.0.0(unclosed", "foo@not-a-version", "@scope@1.0.0"],
+)
+def test_pnpm_rejects_malformed_package_locators(locator):
+    with pytest.raises(ValueError):
+        audit._pnpm_locator(locator)
+
+
+def test_pnpm_limit_and_unknown_sources_are_explicit():
+    text = (
+        "lockfileVersion: '9.0'\n"
+        "importers: {'.': {}}\n"
+        "packages:\n"
+        "  first@1.0.0: {resolution: {tarball: https://registry.npmjs.org/first.tgz}}\n"
+        "  second@2.0.0: {resolution: {tarball: https://registry.npmjs.org.evil.example/second.tgz}}\n"
+        "snapshots: {first@1.0.0: {}, second@2.0.0: {}}\n"
+    )
+
+    records, truncated = audit._parse_pnpm_lock(text, "pnpm-lock.yaml", 1)
+
+    assert truncated
+    assert [(item.name, item.source_kind) for item in records] == [("first", "registry-npm")]
