@@ -50,7 +50,7 @@ Si falta un permiso, una función de alertas no está disponible, hay un error d
 
 ## Auditoría opcional de dependencias
 
-El comando `audit-dependencies` crea un inventario local desde `requirements.txt` (versiones exactas `==`), `package-lock.json`, `npm-shrinkwrap.json`, `poetry.lock` y `Cargo.lock`. No instala paquetes, ejecuta scripts ni consulta la red por defecto:
+El comando `audit-dependencies` crea un inventario local desde `requirements.txt` (versiones exactas `==`), `package-lock.json`, `npm-shrinkwrap.json`, `poetry.lock`, `uv.lock`, `Cargo.lock` y `go.sum`. No instala paquetes, ejecuta scripts ni consulta la red por defecto:
 
 ```bash
 github-security-agent audit-dependencies . --format markdown
@@ -63,7 +63,7 @@ Para consultar avisos de OSV.dev, habilitá explícitamente la consulta:
 github-security-agent audit-dependencies . --query-osv --format markdown
 ```
 
-La consulta envía únicamente nombre, ecosistema y versión exacta de cada dependencia; no envía archivos ni código fuente. Los lockfiles no compatibles, las especificaciones sin versión exacta y los manifiestos no reconocidos se omiten. El recorrido tiene límites de tamaño y cantidad; cualquier error de lectura, parseo o consulta aparece en el informe y marca el estado como incompleto. Los resultados de OSV.dev son orientativos y deben verificarse en la fuente antes de remediar.
+La consulta envía únicamente nombre, ecosistema y versión exacta de cada dependencia; no envía archivos ni código fuente. Si activás `--query-osv`, se enviarán identificadores de paquetes y versiones a OSV.dev; pueden incluir nombres internos, paquetes npm privados (incluso alojados en `registry.npmjs.org`) y rutas privadas de módulos Go. Las directivas de índice visibles en `requirements.txt` se respetan, pero una configuración externa de pip podría usar un índice privado y no se puede inferir desde ese archivo. En `uv.lock` solo se consultan paquetes cuyo origen registrado sea explícitamente `https://pypi.org/simple`; fuentes Git, URL, locales, desconocidas o índices alternativos se mantienen en el inventario y no se envían. Los lockfiles no compatibles, las especificaciones sin versión exacta y los manifiestos no reconocidos se omiten. `go.sum` puede incluir versiones descargadas que ya no están seleccionadas en el módulo; interpretá esas entradas como inventario histórico, no como prueba de dependencias activas. El recorrido tiene límites de tamaño y cantidad; cualquier error de lectura, parseo o consulta aparece en el informe y marca el estado como incompleto. Los resultados de OSV.dev son orientativos y deben verificarse en la fuente antes de remediar.
 
 ## GitHub Action opcional
 

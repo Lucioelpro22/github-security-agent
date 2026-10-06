@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 
 MAX_LOCKFILE_BYTES = 2_000_000
@@ -32,6 +33,7 @@ OSV_QUERY_URL = "https://api.osv.dev/v1/querybatch"
 _PINNED = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*==\s*([A-Za-z0-9_.+-]+)(?:\s*;.*)?$")
 _SAFE_UNSCOPED_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 _SAFE_SCOPED_NAME = re.compile(r"^@[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$")
+_SAFE_GO_MODULE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._!~+-]{0,255}(?:/[A-Za-z0-9._!~+-]{1,255})*$")
 _SAFE_VERSION = re.compile(r"^v?\d[A-Za-z0-9.+!_-]{0,127}$")
 _SENSITIVE_NAME = re.compile(
     r"(?i)^(?:gh[pousr]_|github_pat_|akia[0-9a-z]{16}\b|xox[baprs]-|sk-[a-z0-9_-]{20,})"
@@ -46,6 +48,7 @@ class Dependency:
     version: str
     ecosystem: str
     manifest: str
+    source_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,15 +68,103 @@ class DependencyReport:
     errors: tuple[str, ...]
 
 
+def _public_registry_url(value: str, host: str, paths: set[str]) -> bool:
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == host
+            and (not paths or parsed.path.rstrip("/") in paths)
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port is None
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
+def _poetry_source_kind(source: Any) -> str:
+    if source is None:
+        return "registry-pypi"
+    if not isinstance(source, dict):
+        return "unknown"
+    source_type = source.get("type")
+    if source_type == "legacy" and isinstance(source.get("url"), str):
+        return (
+            "registry-pypi"
+            if _public_registry_url(source["url"], "pypi.org", {"/simple"})
+            else "registry-other"
+        )
+    if source_type == "git":
+        return "git"
+    if source_type in {"directory", "file"}:
+        return "directory"
+    if source_type == "url":
+        return "url"
+    return "unknown"
+
+
+def _cargo_source_kind(source: Any) -> str:
+    if source is None:
+        return "workspace"
+    if not isinstance(source, str):
+        return "unknown"
+    if source.startswith("registry+"):
+        registry = source.removeprefix("registry+")
+        return (
+            "registry-cratesio"
+            if _public_registry_url(registry, "github.com", {"/rust-lang/crates.io-index"})
+            or _public_registry_url(registry, "index.crates.io", {""})
+            else "registry-other"
+        )
+    if source.startswith("sparse+"):
+        registry = source.removeprefix("sparse+")
+        return (
+            "registry-cratesio"
+            if _public_registry_url(registry, "index.crates.io", {""})
+            else "registry-other"
+        )
+    if source.startswith("git+"):
+        return "git"
+    return "unknown"
+
+
+def _npm_source_kind(value: Any) -> str:
+    if not isinstance(value, str):
+        return "unknown"
+    return (
+        "registry-npm"
+        if _public_registry_url(value, "registry.npmjs.org", set())
+        else "registry-other"
+    )
+
+
 def _parse_requirements(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     records: list[Dependency] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    alternate_index = any(
+        line.split("#", 1)[0]
+        .strip()
+        .startswith(("--index-url", "--extra-index-url", "--find-links", "-i ", "--trusted-host"))
+        for line in lines
+    )
+    for line in lines:
         line = line.split("#", 1)[0].strip()
         match = _PINNED.fullmatch(line)
         if match:
             if len(records) >= limit:
                 return records, True
-            records.append(Dependency(match.group(1), match.group(2), "PyPI", path))
+            records.append(
+                Dependency(
+                    match.group(1),
+                    match.group(2),
+                    "PyPI",
+                    path,
+                    "registry-other" if alternate_index else "registry-pypi",
+                )
+            )
     return records, False
 
 
@@ -93,11 +184,54 @@ def _walk_npm_dependencies(
             if isinstance(version, str) and version:
                 if len(records) >= limit:
                     return records, True
-                records.append(Dependency(name, version, "npm", path))
+                records.append(
+                    Dependency(name, version, "npm", path, _npm_source_kind(value.get("resolved")))
+                )
             nested = value.get("dependencies")
             if isinstance(nested, dict):
                 pending.append(nested)
     return records, False
+
+
+def _parse_go_sum(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    records: list[Dependency] = []
+    for line in text.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) != 3 or not fields[2]:
+            raise ValueError("invalid go.sum record")
+        name, version, _checksum = fields
+        if version.endswith("/go.mod"):
+            continue
+        if len(records) >= limit:
+            return records, True
+        records.append(Dependency(name, version, "Go", path))
+    return records, False
+
+
+def _uv_source_kind(source: Any) -> str:
+    if not isinstance(source, dict):
+        return "unknown"
+    registry = source.get("registry")
+    if isinstance(registry, str):
+        parsed = urlsplit(registry)
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname == "pypi.org"
+            and parsed.path.rstrip("/") == "/simple"
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port is None
+            and not parsed.query
+            and not parsed.fragment
+        ):
+            return "registry-pypi"
+        return "registry-other"
+    for kind in ("git", "url", "directory", "editable", "virtual"):
+        if kind in source:
+            return kind
+    return "unknown"
 
 
 def _parse_lockfile(
@@ -118,13 +252,19 @@ def _parse_lockfile(
                 if isinstance(version, str) and name:
                     if len(records) >= limit:
                         return records, True
-                    records.append(Dependency(name, version, "npm", relative))
+                    records.append(
+                        Dependency(
+                            name, version, "npm", relative, _npm_source_kind(value.get("resolved"))
+                        )
+                    )
         if not records and isinstance(data, dict):
             return _walk_npm_dependencies(data.get("dependencies"), relative, limit)
         return records, False
-    if path.name in {"poetry.lock", "Cargo.lock"}:
+    if path.name == "go.sum":
+        return _parse_go_sum(text, relative, limit)
+    if path.name in {"poetry.lock", "uv.lock", "Cargo.lock"}:
         data = tomllib.loads(text)
-        ecosystem = "PyPI" if path.name == "poetry.lock" else "crates.io"
+        ecosystem = "crates.io" if path.name == "Cargo.lock" else "PyPI"
         packages = data.get("package", [])
         if not isinstance(packages, list):
             return [], False
@@ -137,7 +277,15 @@ def _parse_lockfile(
             ):
                 if len(toml_records) >= limit:
                     return toml_records, True
-                toml_records.append(Dependency(item["name"], item["version"], ecosystem, relative))
+                if path.name == "uv.lock":
+                    source_kind = _uv_source_kind(item.get("source"))
+                elif path.name == "poetry.lock":
+                    source_kind = _poetry_source_kind(item.get("source"))
+                else:
+                    source_kind = _cargo_source_kind(item.get("source"))
+                toml_records.append(
+                    Dependency(item["name"], item["version"], ecosystem, relative, source_kind)
+                )
         return toml_records, False
     return [], False
 
@@ -169,14 +317,24 @@ def _read_bounded_lockfile(path: Path, remaining_bytes: int) -> str:
 
 
 def _is_safe_osv_query(dependency: Dependency) -> bool:
-    valid_name = bool(
-        _SAFE_SCOPED_NAME.fullmatch(dependency.name)
-        if dependency.name.startswith("@")
-        else _SAFE_UNSCOPED_NAME.fullmatch(dependency.name)
-    )
+    if dependency.ecosystem == "Go":
+        valid_name = bool(_SAFE_GO_MODULE.fullmatch(dependency.name))
+    else:
+        valid_name = bool(
+            _SAFE_SCOPED_NAME.fullmatch(dependency.name)
+            if dependency.name.startswith("@")
+            else _SAFE_UNSCOPED_NAME.fullmatch(dependency.name)
+        )
+    public_sources = {
+        "PyPI": "registry-pypi",
+        "npm": "registry-npm",
+        "crates.io": "registry-cratesio",
+        "Go": None,
+    }
     return (
-        dependency.ecosystem in {"PyPI", "npm", "crates.io"}
+        dependency.ecosystem in public_sources
         and valid_name
+        and dependency.source_kind == public_sources.get(dependency.ecosystem)
         and not _SENSITIVE_NAME.match(dependency.name)
         and bool(_SAFE_VERSION.fullmatch(dependency.version))
         and not _SENSITIVE_VERSION_TOKEN.search(dependency.version)
@@ -223,7 +381,9 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "package-lock.json",
         "npm-shrinkwrap.json",
         "poetry.lock",
+        "uv.lock",
         "Cargo.lock",
+        "go.sum",
     }
     dependencies: list[Dependency] = []
     errors: list[str] = []
@@ -289,7 +449,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         if limit_reached:
             break
 
-    unique = {(d.ecosystem, d.name, d.version, d.manifest): d for d in dependencies}
+    unique = {(d.ecosystem, d.name, d.version, d.manifest, d.source_kind): d for d in dependencies}
     dependencies = sorted(
         unique.values(), key=lambda d: (d.ecosystem, d.name.lower(), d.version, d.manifest)
     )
@@ -307,7 +467,10 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             if len(safe_batch) != len(batch):
                 skipped = len(batch) - len(safe_batch)
                 lookup = "incomplete"
-                errors.append(f"OSV lookup skipped {skipped} invalid package identifiers")
+                errors.append(
+                    f"OSV lookup skipped {skipped} dependencies without a recognized public source "
+                    "or with invalid package identifiers"
+                )
             if not safe_batch:
                 continue
             try:
