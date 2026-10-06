@@ -572,7 +572,7 @@ def test_pnpm_v9_inventory_uses_snapshots_and_public_tarball_for_osv(tmp_path, m
 
     report = audit.audit_dependencies(tmp_path, query_osv=True)
 
-    assert report.status == "complete"
+    assert report.status == "complete", report.errors
     assert {(item.name, item.version, item.source_kind) for item in report.dependencies} == {
         ("react", "19.0.0", "registry-npm"),
         ("@scope/public", "1.2.3", "registry-npm"),
@@ -614,6 +614,7 @@ def test_pnpm_two_document_lockfile_includes_environment_packages(tmp_path):
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n"
         "packages:\n  foo@1.0.0: {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\nsnapshots: {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {foo@1.0.0: {}}\nsnapshots: {foo@1.0.0: invalid}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: &items {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: *items\n",
         "!!python/object/apply:os.system ['echo unsafe']",
