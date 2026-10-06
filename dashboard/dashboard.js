@@ -159,6 +159,9 @@ function normalizeDependencyReport(report) {
   if (!Array.isArray(report.advisories) || report.advisories.length > MAX_FINDINGS) {
     throw new Error("La lista de avisos excede el límite de 5.000 o no es válida.");
   }
+  if (report.dependencies.length + report.advisories.length > MAX_FINDINGS) {
+    throw new Error("El total combinado de paquetes y avisos excede el límite de 5.000.");
+  }
   if (!Array.isArray(report.errors) || report.errors.length > 100) {
     throw new Error("La lista de errores no es válida.");
   }
