@@ -493,7 +493,9 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
             else:
                 unique[identity] = Dependency(name, version, "npm", path, source_kind)
 
-        def validate_reference(name: Any, version: Any) -> None:
+        def validate_reference(
+            name: Any, version: Any, available: dict[tuple[str, str], Any]
+        ) -> None:
             if not isinstance(name, str) or not isinstance(version, str) or not version:
                 raise ValueError("invalid pnpm dependency reference")
             if version.startswith(("link:", "workspace:", "file:", "directory:")):
@@ -503,7 +505,7 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
                 target_name, target_version, _ = _pnpm_locator(target)
             else:
                 target_name, target_version, _ = _pnpm_locator(f"{name}@{version}")
-            if (target_name, target_version) not in document_snapshots:
+            if (target_name, target_version) not in available:
                 raise ValueError("pnpm dependency has no snapshot")
 
         dependency_sections = (
@@ -523,7 +525,7 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
                 for package_name, reference in references.items():
                     if not isinstance(reference, dict):
                         raise ValueError("invalid pnpm importer dependency")
-                    validate_reference(package_name, reference.get("version"))
+                    validate_reference(package_name, reference.get("version"), document_snapshots)
 
         for snapshot in document_snapshots.values():
             for section in ("dependencies", "optionalDependencies"):
@@ -531,7 +533,7 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
                 if not isinstance(references, dict):
                     raise ValueError("invalid pnpm snapshot dependencies")
                 for package_name, version in references.items():
-                    validate_reference(package_name, version)
+                    validate_reference(package_name, version, document_snapshots)
     return list(unique.values()), False
 
 
