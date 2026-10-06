@@ -76,7 +76,7 @@ def _public_registry_url(value: str, host: str, paths: set[str]) -> bool:
         return (
             parsed.scheme == "https"
             and parsed.hostname == host
-            and parsed.path.rstrip("/") in paths
+            and (not paths or parsed.path.rstrip("/") in paths)
             and parsed.username is None
             and parsed.password is None
             and parsed.port is None
