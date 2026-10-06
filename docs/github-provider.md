@@ -33,4 +33,4 @@ Alert text is untrusted remote data. Markdown output escapes HTML and Markdown t
 
 Requests have a 10-second timeout. Each response is limited to 2 MB, each alert class to 10 pages of 100 results, and pagination links must remain on HTTPS `api.github.com` and the expected endpoint. The provider does not retry or convert errors into zero findings. A limit, malformed response, permission failure, or network failure returns a clear incomplete-scan error.
 
-This provider currently targets GitHub.com. Enterprise Server support and a local dashboard remain future work. The dashboard should be designed only after token handling and alert coverage have been validated.
+This provider currently targets GitHub.com. Enterprise Server support remains future work. The repository includes a static offline viewer for complete JSON reports; it never receives the API token and makes no network requests.
