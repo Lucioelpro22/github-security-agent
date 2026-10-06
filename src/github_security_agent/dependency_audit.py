@@ -578,6 +578,47 @@ def _uv_source_kind(source: Any) -> str:
     return "unknown"
 
 
+def _composer_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate Composer JSON key")
+        result[key] = value
+    return result
+
+
+def _parse_composer_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    data = json.loads(text, object_pairs_hook=_composer_object)
+    if not isinstance(data, dict):
+        raise ValueError("invalid Composer lockfile")
+    records: list[Dependency] = []
+    seen: set[str] = set()
+    for group in ("packages", "packages-dev"):
+        packages = data.get(group)
+        if not isinstance(packages, list):
+            raise ValueError("missing Composer package list")
+        for item in packages:
+            if not isinstance(item, dict):
+                raise ValueError("invalid Composer package")
+            name, version = item.get("name"), item.get("version")
+            if (
+                not isinstance(name, str)
+                or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,127}/[a-z0-9][a-z0-9_.-]{0,127}", name)
+                or not isinstance(version, str)
+                or not 1 <= len(version) <= 128
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+/-]*", version)
+                or name in seen
+            ):
+                raise ValueError("invalid or duplicate Composer package identifier")
+            seen.add(name)
+            if len(records) >= limit:
+                return records, True
+            # Download/VCS URLs do not establish the originating registry.
+            # Keep branch versions literal; never substitute aliases or requires.
+            records.append(Dependency(name, version, "Packagist", path, "unknown"))
+    return records, False
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
@@ -587,6 +628,8 @@ def _parse_lockfile(
         return _parse_yarn_lock(text, relative, limit)
     if path.name == "pnpm-lock.yaml":
         return _parse_pnpm_lock(text, relative, limit)
+    if path.name == "composer.lock":
+        return _parse_composer_lock(text, relative, limit)
     if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         data = json.loads(text)
         records: list[Dependency] = []
@@ -730,6 +773,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "npm-shrinkwrap.json",
         "yarn.lock",
         "pnpm-lock.yaml",
+        "composer.lock",
         "poetry.lock",
         "uv.lock",
         "Cargo.lock",
