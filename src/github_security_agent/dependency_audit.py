@@ -327,10 +327,16 @@ def _is_safe_osv_query(dependency: Dependency) -> bool:
             if dependency.name.startswith("@")
             else _SAFE_UNSCOPED_NAME.fullmatch(dependency.name)
         )
+    public_sources = {
+        "PyPI": "registry-pypi",
+        "npm": "registry-npm",
+        "crates.io": "registry-cratesio",
+        "Go": None,
+    }
     return (
-        dependency.ecosystem in {"PyPI", "npm", "crates.io", "Go"}
+        dependency.ecosystem in public_sources
         and valid_name
-        and dependency.source_kind in {None, "registry-pypi"}
+        and dependency.source_kind == public_sources.get(dependency.ecosystem)
         and not _SENSITIVE_NAME.match(dependency.name)
         and bool(_SAFE_VERSION.fullmatch(dependency.version))
         and not _SENSITIVE_VERSION_TOKEN.search(dependency.version)
