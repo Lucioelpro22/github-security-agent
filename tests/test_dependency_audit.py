@@ -52,7 +52,6 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
     }
 
 
-
 def test_parses_uv_and_go_lockfiles(tmp_path):
     (tmp_path / "uv.lock").write_text(
         'version = 1\n\n[[package]]\nname = "httpx"\nversion = "0.27.0"\n'
@@ -60,8 +59,7 @@ def test_parses_uv_and_go_lockfiles(tmp_path):
         encoding="utf-8",
     )
     (tmp_path / "go.sum").write_text(
-        "golang.org/x/text v0.16.0 h1:checksum\n"
-        "golang.org/x/text v0.16.0/go.mod h1:modchecksum\n",
+        "golang.org/x/text v0.16.0 h1:checksum\ngolang.org/x/text v0.16.0/go.mod h1:modchecksum\n",
         encoding="utf-8",
     )
 
@@ -77,7 +75,7 @@ def test_parses_uv_and_go_lockfiles(tmp_path):
 
 def test_uv_osv_lookup_skips_git_and_private_registry_packages(tmp_path, monkeypatch):
     (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n'
+        "version = 1\n\n"
         '[[package]]\nname = "public-lib"\nversion = "1.0.0"\n'
         'source = { registry = "https://pypi.org/simple" }\n\n'
         '[[package]]\nname = "internal-lib"\nversion = "2.0.0"\n'
@@ -103,9 +101,7 @@ def test_uv_osv_lookup_skips_git_and_private_registry_packages(tmp_path, monkeyp
         "registry-other",
         "git",
     }
-    shared_sources = {
-        item.source_kind for item in report.dependencies if item.name == "shared-lib"
-    }
+    shared_sources = {item.source_kind for item in report.dependencies if item.name == "shared-lib"}
     assert shared_sources == {"registry-pypi", "registry-other"}
 
 
@@ -125,18 +121,20 @@ def test_osv_skips_nonpublic_sources_across_lockfile_types(tmp_path, monkeypatch
         encoding="utf-8",
     )
     (tmp_path / "package-lock.json").write_text(
-        json.dumps({
-            "packages": {
-                "node_modules/internal-npm": {
-                    "version": "2.0.0",
-                    "resolved": "https://npm.internal/internal-npm.tgz",
-                },
-                "node_modules/public-npm": {
-                    "version": "3.0.0",
-                    "resolved": "https://registry.npmjs.org/public-npm/-/public-npm-3.0.0.tgz",
-                },
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/internal-npm": {
+                        "version": "2.0.0",
+                        "resolved": "https://npm.internal/internal-npm.tgz",
+                    },
+                    "node_modules/public-npm": {
+                        "version": "3.0.0",
+                        "resolved": "https://registry.npmjs.org/public-npm/-/public-npm-3.0.0.tgz",
+                    },
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
     (tmp_path / "poetry.lock").write_text(
@@ -154,7 +152,9 @@ def test_osv_skips_nonpublic_sources_across_lockfile_types(tmp_path, monkeypatch
         encoding="utf-8",
     )
     sent = []
-    monkeypatch.setattr(audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[] for _ in batch])
+    monkeypatch.setattr(
+        audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[] for _ in batch]
+    )
 
     report = audit.audit_dependencies(tmp_path, query_osv=True)
 
