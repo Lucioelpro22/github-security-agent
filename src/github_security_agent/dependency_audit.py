@@ -897,7 +897,10 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             and not (Path(current) / name).is_symlink()
         )
         for declaration, companions in _MANIFEST_COMPANIONS.items():
-            if declaration in files and not companions.intersection(files):
+            if declaration in files and not any(
+                companion in files and not (Path(current) / companion).is_symlink()
+                for companion in companions
+            ):
                 declaration_path = Path(current) / declaration
                 if declaration_path.is_symlink():
                     continue

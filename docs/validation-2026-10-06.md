@@ -31,4 +31,4 @@ La muestra pertenece a un solo titular y está compuesta principalmente por proy
 Se prepara v0.2.0 como versión de validación controlada, con guía de instalación, códigos de salida y límites de cobertura. No constituye una certificación de seguridad ni una auditoría externa.
 
 ## Validación de la corrección
-153 pruebas Python y 12 del visor pasan; cobertura total 86,09 %. Ruff, mypy y formato pasan. Checks remotos pendientes al preparar este documento.
+154 pruebas Python y 12 del visor pasan; cobertura total 86,09 %. Ruff, mypy y formato pasan. Checks remotos pendientes al preparar este documento.

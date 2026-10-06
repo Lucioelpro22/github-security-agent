@@ -942,3 +942,17 @@ def test_uncovered_manifest_budget(tmp_path, monkeypatch):
     assert report.status == "incomplete"
     assert len(report.errors) == 2
     assert "configured limit" in report.errors[-1]
+
+
+def test_symlink_companion_does_not_claim_dependency_coverage(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[project]")
+    outside = tmp_path / "external.txt"
+    outside.write_text("requests==2.31.0")
+    try:
+        (tmp_path / "requirements.txt").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert "coverage unknown" in report.errors[0]
