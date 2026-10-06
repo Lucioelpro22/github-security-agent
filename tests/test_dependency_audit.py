@@ -83,7 +83,11 @@ def test_uv_osv_lookup_skips_git_and_private_registry_packages(tmp_path, monkeyp
         '[[package]]\nname = "internal-lib"\nversion = "2.0.0"\n'
         'source = { registry = "https://packages.internal/simple" }\n\n'
         '[[package]]\nname = "git-lib"\nversion = "3.0.0"\n'
-        'source = { git = "https://example.com/team/lib" }\n',
+        'source = { git = "https://example.com/team/lib" }\n\n'
+        '[[package]]\nname = "shared-lib"\nversion = "4.0.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        '[[package]]\nname = "shared-lib"\nversion = "4.0.0"\n'
+        'source = { registry = "https://packages.internal/simple" }\n',
         encoding="utf-8",
     )
     sent = []
@@ -93,12 +97,16 @@ def test_uv_osv_lookup_skips_git_and_private_registry_packages(tmp_path, monkeyp
 
     assert report.status == "incomplete"
     assert report.advisory_lookup == "incomplete"
-    assert [item.name for item in sent] == ["public-lib"]
+    assert {item.name for item in sent} == {"public-lib", "shared-lib"}
     assert {item.source_kind for item in report.dependencies} == {
         "registry-pypi",
         "registry-other",
         "git",
     }
+    shared_sources = {
+        item.source_kind for item in report.dependencies if item.name == "shared-lib"
+    }
+    assert shared_sources == {"registry-pypi", "registry-other"}
 
 
 def test_malformed_go_sum_marks_report_incomplete(tmp_path):
