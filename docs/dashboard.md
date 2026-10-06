@@ -27,6 +27,7 @@ Abrí `dashboard/index.html` en un navegador y seleccioná el JSON. El archivo s
 ## Límites y privacidad
 
 - Acepta archivos de hasta 5 MiB y hasta 5.000 elementos por informe; en auditorías de dependencias se suman paquetes y avisos. Si el tamaño o cantidad excede el límite, rechaza el archivo completo; no trunca en silencio.
+- Los errores de auditoría se reducen a mensajes genéricos; no se muestran rutas absolutas, UNC ni nombres de archivos.
 - Solo conserva campos permitidos para cada tipo. Campos adicionales como `secret`, `token`, `metadata` y respuestas crudas se descartan.
 - Los datos remotos, rutas, nombres de paquetes y textos de OSV se muestran como texto plano con `textContent`; no se interpretan HTML/Markdown ni se generan enlaces.
 - El HTML establece CSP local, no referencia CDNs y bloquea conexiones.
