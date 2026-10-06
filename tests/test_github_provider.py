@@ -85,9 +85,7 @@ def test_provider_reads_three_alert_classes_and_never_exports_secret(monkeypatch
             ]
         )
 
-    monkeypatch.setattr(
-        "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
-    )
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
     findings = list(GitHubApiProvider(TOKEN).list_findings(RepositoryTarget("owner", "repo")))
 
     assert len(requests) == 3
@@ -119,9 +117,7 @@ def test_provider_follows_only_same_origin_next_pages(monkeypatch):
             return FakeResponse([{"number": 2, "security_advisory": {"summary": "Second"}}])
         return FakeResponse([])
 
-    monkeypatch.setattr(
-        "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
-    )
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
     findings = list(GitHubApiProvider(TOKEN).list_findings(RepositoryTarget("owner", "repo")))
 
     assert [finding.identifier for finding in findings] == ["1", "2"]
@@ -154,9 +150,7 @@ def test_provider_reports_http_status_without_body_or_token(monkeypatch):
             fp=io.BytesIO(f"{TOKEN} sensitive response".encode()),
         )
 
-    monkeypatch.setattr(
-        "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
-    )
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
     provider = GitHubApiProvider(TOKEN)
 
     with pytest.raises(GitHubProviderError, match="read permissions") as caught:
@@ -175,9 +169,7 @@ def test_provider_fails_closed_when_page_limit_is_reached(monkeypatch):
             '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&page=2>; rel="next"',
         )
 
-    monkeypatch.setattr(
-        "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
-    )
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
 
     with pytest.raises(GitHubProviderError, match="page limit"):
         list(GitHubApiProvider(TOKEN).list_findings(RepositoryTarget("owner", "repo")))

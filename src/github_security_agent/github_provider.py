@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .http_transport import urlopen_no_redirect
+
 import json
 import re
 import urllib.error
@@ -84,7 +86,7 @@ class GitHubApiProvider:
             method="GET",
         )
         try:
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            with urlopen_no_redirect(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 body = response.read(MAX_RESPONSE_BYTES + 1)
                 link_header = response.headers.get("Link")
         except urllib.error.HTTPError as exc:

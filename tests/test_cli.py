@@ -63,9 +63,7 @@ def test_github_provider_uses_environment_token_and_keeps_default_offline(
         requests.append(request)
         return Response()
 
-    monkeypatch.setattr(
-        "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
-    )
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
 
     result = main(
         ["scan", "--owner", "owner", "--repo", "repo", "--provider", "github", "--format", "json"]
