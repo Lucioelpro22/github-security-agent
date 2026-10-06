@@ -469,7 +469,10 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
             if len(safe_batch) != len(batch):
                 skipped = len(batch) - len(safe_batch)
                 lookup = "incomplete"
-                errors.append(f"OSV lookup skipped {skipped} invalid package identifiers")
+                errors.append(
+                    f"OSV lookup skipped {skipped} dependencies without a recognized public source "
+                    "or with invalid package identifiers"
+                )
             if not safe_batch:
                 continue
             try:
