@@ -45,8 +45,11 @@ function commonReport(report, type) {
 }
 
 function normalizeGithub(report) {
-  if (report.schema_version !== 1 || (report.report_type && report.report_type !== "github_alerts")) {
-    throw new Error("Formato de alertas GitHub no compatible.");
+  if (report.schema_version !== 1) {
+    throw new Error("Formato de alertas GitHub no compatible: se requiere schema_version 1.");
+  }
+  if (report.report_type && report.report_type !== "github_alerts") {
+    throw new Error("Tipo de informe GitHub no compatible.");
   }
   if (!["complete", "incomplete"].includes(report.status)) {
     throw new Error("El informe no declara un estado compatible.");
