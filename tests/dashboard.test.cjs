@@ -266,7 +266,11 @@ function dependencySample(overrides = {}) {
       },
     ],
     advisory_lookup: "complete",
-    errors: ["/home/private/secret-path: could not parse"],
+    errors: [
+      "/home/private/secret-path: could not safely parse lockfile",
+      "\\\\\\\\server\\\\share\\\\private: could not safely parse lockfile",
+      "private/lockfile.txt: skipped by size limit",
+    ],
     ...overrides,
   };
 }
@@ -295,7 +299,10 @@ test("normalizes dependency inventories and OSV advisories without inventing sev
   assert.equal(report.findings.length, 1);
   assert.equal(report.findings[0].severity, "unknown");
   assert.match(report.findings[0].state, /no incluida/);
-  assert.match(report.errors[0], /omitido por seguridad/);
+  assert.equal(report.errors[0], "No se pudo interpretar un lockfile.");
+  assert.equal(report.errors[1], "No se pudo interpretar un lockfile.");
+  assert.equal(report.errors[2], "Se omitió un lockfile por su tamaño.");
+  assert.doesNotMatch(JSON.stringify(report.errors), /private|secret-path|server|lockfile.txt/);
   assert.doesNotMatch(JSON.stringify(report), /DROP_DEPENDENCY_TOKEN|secret/);
   const doc = fakeDocument();
   renderReport(parseReport(JSON.stringify(dependencySample({ errors: [] }))), doc);
