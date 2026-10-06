@@ -2,6 +2,8 @@
 
 ## 0.2.0 — 2026-10-06
 
+- Bloquea redirecciones HTTP en GitHub y OSV; prepara un smoke test autenticado manual sin publicar informes.
+
 - Amplía el inventario offline a npm, Yarn, pnpm v9, Poetry, uv, Cargo, Go, Composer y Pipenv spec 6, además de requirements exactos.
 - Conserva consultas OSV optativas y filtros de origen; Composer y Yarn Berry no se consultan.
 - Corrige la presentación de inventarios parciales: manifests conocidos sin lockfile compatible y requirements no resueltos se marcan incompletos.

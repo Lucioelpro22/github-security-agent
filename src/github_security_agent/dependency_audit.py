@@ -7,6 +7,8 @@ versions are sent, never source files or lockfile contents.
 
 from __future__ import annotations
 
+from .http_transport import urlopen_no_redirect
+
 import html
 import json
 import os
@@ -837,7 +839,7 @@ def _post_osv_batch(dependencies: list[Dependency]) -> list[list[dict[str, Any]]
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=5) as response:
+    with urlopen_no_redirect(request, timeout=5) as response:
         body = response.read(MAX_RESPONSE_BYTES + 1)
     if len(body) > MAX_RESPONSE_BYTES:
         raise ValueError("OSV response exceeded the configured size limit")

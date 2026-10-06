@@ -329,7 +329,7 @@ def test_osv_request_uses_only_package_identifiers_and_checks_response(monkeypat
         seen["payload"] = json.loads(request.data)
         return Response()
 
-    monkeypatch.setattr(audit.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(audit, "urlopen_no_redirect", fake_urlopen)
     dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt", "registry-pypi")
 
     assert audit._post_osv_batch([dependency]) == [[]]
@@ -352,7 +352,7 @@ def test_osv_rejects_oversized_or_mismatched_responses(monkeypatch, body):
         def read(self, limit):
             return body
 
-    monkeypatch.setattr(audit.urllib.request, "urlopen", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(audit, "urlopen_no_redirect", lambda *args, **kwargs: Response())
     dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt", "registry-pypi")
 
     with pytest.raises(ValueError):
@@ -501,8 +501,8 @@ def test_osv_skips_secret_like_package_names(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        audit.urllib.request,
-        "urlopen",
+        audit,
+        "urlopen_no_redirect",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network request was sent")),
     )
 
@@ -516,8 +516,8 @@ def test_osv_skips_secret_like_package_names(tmp_path, monkeypatch):
 def test_osv_request_payload_has_a_byte_limit(monkeypatch):
     monkeypatch.setattr(audit, "MAX_REQUEST_BYTES", 1)
     monkeypatch.setattr(
-        audit.urllib.request,
-        "urlopen",
+        audit,
+        "urlopen_no_redirect",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network request was sent")),
     )
     dependency = audit.Dependency("requests", "2.31.0", "PyPI", "requirements.txt", "registry-pypi")

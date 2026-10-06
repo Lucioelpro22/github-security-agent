@@ -34,3 +34,11 @@ Alert text is untrusted remote data. Markdown output escapes HTML and Markdown t
 Requests have a 10-second timeout. Each response is limited to 2 MB, each alert class to 10 pages of 100 results, and pagination links must remain on HTTPS `api.github.com` and the expected endpoint. The provider does not retry or convert errors into zero findings. A limit, malformed response, permission failure, or network failure returns a clear incomplete-scan error.
 
 This provider currently targets GitHub.com. Enterprise Server support remains future work. The repository includes a static offline viewer for complete JSON reports; it never receives the API token and makes no network requests.
+
+## Manual authenticated integration test
+
+The `Authenticated GitHub smoke test` workflow runs only when manually dispatched on `main`, targeting this repository. Add the repository Actions secret `SECURITY_AGENT_READ_TOKEN` with a short-lived fine-grained token restricted to `github-security-agent` and the three read-only alert permissions above. Never paste the token into chat or logs. Run the workflow from Actions and revoke the token after testing.
+
+The workflow installs the reviewed agent before making the token available to the scan step. It has only `contents: read`, does not receive the token on pull requests, does not upload reports, and prints only the completion state. A missing secret, denied feature, redirect or incomplete inventory fails the job; do not describe such a run as successful authentication. This workflow has been prepared, not yet run with a real token.
+
+All HTTP redirects are blocked for GitHub and OSV requests. This prevents automatic forwarding of authentication headers or dependency-query data. See the [Python urllib documentation](https://docs.python.org/3.13/library/urllib.request.html).
