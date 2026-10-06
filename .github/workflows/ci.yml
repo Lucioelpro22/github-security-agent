@@ -37,7 +37,7 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check .
       - name: Ruff format check
-        run: python -m ruff format --check src/github_security_agent/__init__.py src/github_security_agent/cli.py src/github_security_agent/domain.py src/github_security_agent/provider.py src/github_security_agent/service.py src/github_security_agent/repository_scan.py src/github_security_agent/dependency_audit.py tests/test_cli.py tests/test_dependency_audit.py tests/test_domain.py tests/test_package.py tests/test_service.py tests/test_repository_scan.py
+        run: python -m ruff format --check src/github_security_agent/__init__.py src/github_security_agent/cli.py src/github_security_agent/domain.py src/github_security_agent/provider.py src/github_security_agent/service.py src/github_security_agent/repository_scan.py src/github_security_agent/dependency_audit.py src/github_security_agent/github_provider.py tests/test_cli.py tests/test_dependency_audit.py tests/test_github_provider.py tests/test_domain.py tests/test_package.py tests/test_service.py tests/test_repository_scan.py
       - name: Type check
         if: matrix.python-version == '3.12'
         run: python -m mypy src

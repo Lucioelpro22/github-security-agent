@@ -1,5 +1,6 @@
 """Read-only application service and deterministic report serialization."""
 
+import html
 import json
 from collections.abc import Iterable
 
@@ -37,13 +38,37 @@ def report_json(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -
     )
 
 
+def _markdown_cell(value: str) -> str:
+    return (
+        html.escape(value, quote=False)
+        .replace("|", r"\|")
+        .replace("`", "&#96;")
+        .replace("[", "&#91;")
+        .replace("]", "&#93;")
+        .replace("*", "&#42;")
+        .replace("_", "&#95;")
+        .replace("\n", " ")
+    )
+
+
 def report_markdown(target: RepositoryTarget, findings: Iterable[SecurityFinding]) -> str:
     rows = list(findings)
-    lines = [f"# Security report: `{target.full_name}`", "", f"Open findings: **{len(rows)}**", ""]
+    lines = [
+        f"# Security report: {_markdown_cell(target.full_name)}",
+        "",
+        f"Open findings: **{len(rows)}**",
+        "",
+    ]
     if not rows:
         return "\n".join([*lines, "No findings returned by the read-only provider.", ""])
     lines.extend(["| Class | ID | Severity | Title |", "|---|---|---|---|"])
     lines.extend(
-        f"| {f.alert_class.value} | {f.identifier} | {f.severity.value} | {f.title} |" for f in rows
+        "| "
+        + " | ".join(
+            _markdown_cell(value)
+            for value in (f.alert_class.value, f.identifier, f.severity.value, f.title)
+        )
+        + " |"
+        for f in rows
     )
     return "\n".join([*lines, ""])

@@ -1,3 +1,5 @@
+import json
+
 from github_security_agent.cli import main
 
 
@@ -24,3 +26,55 @@ def test_local_cli_reports_invalid_path_without_echoing_it(capsys) -> None:
     result = capsys.readouterr()
     assert result.out == ""
     assert "Unable to scan" in result.err
+
+
+def test_github_provider_requires_token_from_environment(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    result = main(["scan", "--owner", "owner", "--repo", "repo", "--provider", "github"])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert captured.out == ""
+    assert "GITHUB_TOKEN is not set" in captured.err
+
+
+def test_github_provider_uses_environment_token_and_keeps_default_offline(
+    monkeypatch, capsys
+) -> None:
+    token = "environment-token-test-only"
+    monkeypatch.setenv("GITHUB_TOKEN", token)
+    requests = []
+
+    class Response:
+        def __init__(self):
+            self.headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, limit):
+            return b"[]"
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        return Response()
+
+    monkeypatch.setattr(
+        "github_security_agent.github_provider.urllib.request.urlopen", fake_urlopen
+    )
+
+    result = main(
+        ["scan", "--owner", "owner", "--repo", "repo", "--provider", "github", "--format", "json"]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert len(requests) == 3
+    assert all(request.get_method() == "GET" for request in requests)
+    assert all(request.get_header("Authorization") == f"Bearer {token}" for request in requests)
+    assert token not in captured.out
+    assert json.loads(captured.out)["findings"] == []

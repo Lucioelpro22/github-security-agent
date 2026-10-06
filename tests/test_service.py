@@ -23,3 +23,19 @@ def test_json_report_excludes_metadata_and_is_parseable() -> None:
     payload = json.loads(report_json(target, [finding]))
     assert payload["findings"][0]["severity"] == "high"
     assert "internal" not in payload["findings"][0]
+
+
+def test_markdown_report_escapes_untrusted_alert_text() -> None:
+    target = RepositoryTarget("owner", "repo")
+    finding = SecurityFinding(
+        AlertClass.CODE_SCANNING,
+        "alert-1",
+        "<script>alert(1)</script> [click](javascript:alert(1)) | title",
+    )
+
+    output = report_markdown(target, [finding])
+
+    assert "<script>" not in output
+    assert "[click]" not in output
+    assert "javascript:" in output
+    assert r"\|" in output
