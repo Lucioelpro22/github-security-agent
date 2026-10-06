@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 
 MAX_LOCKFILE_BYTES = 2_000_000
@@ -49,6 +50,7 @@ class Dependency:
     version: str
     ecosystem: str
     manifest: str
+    source_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +122,30 @@ def _parse_go_sum(text: str, path: str, limit: int) -> tuple[list[Dependency], b
     return records, False
 
 
+def _uv_source_kind(source: Any) -> str:
+    if not isinstance(source, dict):
+        return "unknown"
+    registry = source.get("registry")
+    if isinstance(registry, str):
+        parsed = urlsplit(registry)
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname == "pypi.org"
+            and parsed.path.rstrip("/") == "/simple"
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port is None
+            and not parsed.query
+            and not parsed.fragment
+        ):
+            return "registry-pypi"
+        return "registry-other"
+    for kind in ("git", "url", "directory", "editable", "virtual"):
+        if kind in source:
+            return kind
+    return "unknown"
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
@@ -159,7 +185,10 @@ def _parse_lockfile(
             ):
                 if len(toml_records) >= limit:
                     return toml_records, True
-                toml_records.append(Dependency(item["name"], item["version"], ecosystem, relative))
+                source_kind = _uv_source_kind(item.get("source")) if path.name == "uv.lock" else None
+                toml_records.append(
+                    Dependency(item["name"], item["version"], ecosystem, relative, source_kind)
+                )
         return toml_records, False
     return [], False
 
@@ -202,6 +231,7 @@ def _is_safe_osv_query(dependency: Dependency) -> bool:
     return (
         dependency.ecosystem in {"PyPI", "npm", "crates.io", "Go"}
         and valid_name
+        and dependency.source_kind in {None, "registry-pypi"}
         and not _SENSITIVE_NAME.match(dependency.name)
         and bool(_SAFE_VERSION.fullmatch(dependency.version))
         and not _SENSITIVE_VERSION_TOKEN.search(dependency.version)
