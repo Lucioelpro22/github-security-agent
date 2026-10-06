@@ -193,6 +193,156 @@ def _walk_npm_dependencies(
     return records, False
 
 
+def _yarn_scalar(value: str) -> str:
+    value = value.strip()
+    if value.startswith('"'):
+        decoded = json.loads(value)
+        if not isinstance(decoded, str):
+            raise ValueError("invalid Yarn scalar")
+        return decoded
+    if value.startswith("'"):
+        if not value.endswith("'"):
+            raise ValueError("invalid Yarn scalar")
+        return value[1:-1].replace("''", "'")
+    return value
+
+
+def _yarn_selectors(header: str) -> list[str]:
+    selectors: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for char in header:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif quote == '"' and char == "\\":
+            current.append(char)
+            escaped = True
+        elif quote is not None:
+            current.append(char)
+            if char == quote:
+                quote = None
+        elif char in {"'", '"'}:
+            current.append(char)
+            quote = char
+        elif char == ",":
+            selectors.append(_yarn_scalar("".join(current)))
+            current = []
+        else:
+            current.append(char)
+    if quote is not None or escaped:
+        raise ValueError("invalid Yarn selector header")
+    selectors.append(_yarn_scalar("".join(current)))
+    return [selector.strip() for selector in selectors if selector.strip()]
+
+
+def _yarn_selector_name(selector: str) -> tuple[str, bool]:
+    if selector.startswith("@"):
+        slash = selector.find("/")
+        separator = selector.find("@", slash + 1) if slash >= 0 else -1
+        if slash <= 1 or separator <= slash + 1:
+            raise ValueError("invalid Yarn package selector")
+        name = selector[:separator]
+        selector_range = selector[separator + 1 :]
+        aliased = False
+    else:
+        name, has_separator, selector_range = selector.partition("@")
+        if not has_separator:
+            raise ValueError("invalid Yarn package selector")
+        aliased = selector_range.startswith("npm:")
+        if aliased and not selector_range.removeprefix("npm:"):
+            raise ValueError("invalid Yarn package selector")
+    if not selector_range or not (
+        _SAFE_SCOPED_NAME.fullmatch(name)
+        if name.startswith("@")
+        else _SAFE_UNSCOPED_NAME.fullmatch(name)
+    ):
+        raise ValueError("invalid Yarn package name")
+    return name, aliased
+
+
+def _yarn_source_kind(resolved: str | None, *, classic: bool, aliased: bool) -> str:
+    if not classic or aliased or resolved is None:
+        return "unknown"
+    try:
+        parsed = urlsplit(resolved)
+    except ValueError:
+        return "registry-other"
+    if parsed.fragment and not re.fullmatch(r"[A-Fa-f0-9]{40}", parsed.fragment):
+        return "registry-other"
+    public_url = parsed._replace(fragment="").geturl()
+    if _public_registry_url(public_url, "registry.npmjs.org", set()) or _public_registry_url(
+        public_url, "registry.yarnpkg.com", set()
+    ):
+        return "registry-npm"
+    return "registry-other"
+
+
+def _parse_yarn_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    classic = "# yarn lockfile v1" in text.splitlines()[:10]
+    records: list[Dependency] = []
+    names: list[str] = []
+    aliased = False
+    version: str | None = None
+    resolved: str | None = None
+
+    def finish_entry() -> bool:
+        nonlocal names, aliased, version, resolved
+        if not names:
+            return False
+        if not version:
+            raise ValueError("Yarn entry has no exact version")
+        if len(records) >= limit:
+            return True
+        source_kind = _yarn_source_kind(resolved, classic=classic, aliased=aliased)
+        records.append(Dependency(names[0], version, "npm", path, source_kind))
+        names = []
+        aliased = False
+        version = None
+        resolved = None
+        return False
+
+    for raw_line in text.splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        line = raw_line.strip()
+        if indent == 0:
+            if finish_entry():
+                return records, True
+            if line == "__metadata:":
+                continue
+            if not line.endswith(":"):
+                raise ValueError("unrecognized Yarn lockfile structure")
+            selectors = _yarn_selectors(line[:-1])
+            if not selectors:
+                raise ValueError("empty Yarn selector")
+            parsed_names = [_yarn_selector_name(selector) for selector in selectors]
+            if len({name for name, _ in parsed_names}) != 1:
+                raise ValueError("Yarn header combines different package names")
+            names = [parsed_names[0][0]]
+            aliased = any(is_alias for _, is_alias in parsed_names)
+            continue
+        if indent != 2 or not names:
+            continue
+        if line.startswith("version:"):
+            version = _yarn_scalar(line.partition(":")[2])
+        elif line.startswith("version "):
+            version = _yarn_scalar(line[len("version ") :])
+        elif line.startswith("resolved "):
+            resolved = _yarn_scalar(line[len("resolved ") :])
+        elif line.startswith("resolution:"):
+            # Berry locators do not reveal the configured npm registry.
+            resolved = None
+
+    if finish_entry():
+        return records, True
+    if not records and not classic:
+        raise ValueError("unsupported Yarn lockfile format")
+    return records, False
+
+
 def _parse_go_sum(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     records: list[Dependency] = []
     for line in text.splitlines():
@@ -239,6 +389,8 @@ def _parse_lockfile(
 ) -> tuple[list[Dependency], bool]:
     if path.name in {"requirements.txt", "requirements-lock.txt"}:
         return _parse_requirements(text, relative, limit)
+    if path.name == "yarn.lock":
+        return _parse_yarn_lock(text, relative, limit)
     if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         data = json.loads(text)
         records: list[Dependency] = []
@@ -380,6 +532,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "requirements-lock.txt",
         "package-lock.json",
         "npm-shrinkwrap.json",
+        "yarn.lock",
         "poetry.lock",
         "uv.lock",
         "Cargo.lock",

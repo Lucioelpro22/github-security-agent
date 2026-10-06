@@ -52,6 +52,95 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
     }
 
 
+def test_parses_yarn_classic_and_queries_only_public_resolved_urls(tmp_path, monkeypatch):
+    (tmp_path / "yarn.lock").write_text(
+        "# yarn lockfile v1\n\n"
+        '"left-pad@^1.0.0":\n'
+        '  version "1.3.0"\n'
+        '  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#0123456789012345678901234567890123456789"\n'
+        "  dependencies:\n"
+        '    nested "^2.0.0"\n'
+        "\n"
+        '"@scope/pkg@^1.0.0", "@scope/pkg@~1.2.0":\n'
+        '  version "1.2.4"\n'
+        '  resolved "https://registry.npmjs.org/@scope/pkg/-/pkg-1.2.4.tgz"\n'
+        "\n"
+        '"private-lib@^1.0.0":\n'
+        '  version "1.0.1"\n'
+        '  resolved "https://packages.internal/private-lib.tgz"\n',
+        encoding="utf-8",
+    )
+    sent = []
+    monkeypatch.setattr(
+        audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[] for _ in batch]
+    )
+
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+
+    assert report.status == "incomplete"
+    assert {(item.name, item.version) for item in report.dependencies} == {
+        ("left-pad", "1.3.0"),
+        ("@scope/pkg", "1.2.4"),
+        ("private-lib", "1.0.1"),
+    }
+    assert {item.name for item in sent} == {"left-pad", "@scope/pkg"}
+    assert {item.source_kind for item in report.dependencies} == {
+        "registry-npm",
+        "registry-other",
+    }
+
+
+def test_yarn_berry_inventory_skips_osv_without_registry_provenance(tmp_path, monkeypatch):
+    (tmp_path / "yarn.lock").write_text(
+        "__metadata:\n"
+        "  version: 8\n"
+        "\n"
+        '"@scope/pkg@npm:^1.0.0":\n'
+        "  version: 1.2.3\n"
+        '  resolution: "@scope/pkg@npm:1.2.3"\n'
+        "  dependencies:\n"
+        "    nested: ^2.0.0\n"
+        "\n"
+        '"local-lib@workspace:.":\n'
+        "  version: 0.0.0-use.local\n"
+        '  resolution: "local-lib@workspace:."\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        audit,
+        "_post_osv_batch",
+        lambda _: (_ for _ in ()).throw(AssertionError("network request was sent")),
+    )
+
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+
+    assert report.status == "incomplete"
+    assert report.advisory_lookup == "incomplete"
+    assert {(item.name, item.version, item.source_kind) for item in report.dependencies} == {
+        ("@scope/pkg", "1.2.3", "unknown"),
+        ("local-lib", "0.0.0-use.local", "unknown"),
+    }
+
+
+@pytest.mark.parametrize(
+    "lock_body",
+    [
+        '# yarn lockfile v1\nnot-a-package-selector:\n  version "1.0.0"\n',
+        '# yarn lockfile v1\n"foo@":\n  version "1.0.0"\n',
+        '# yarn lockfile v1\n"foo@npm:":\n  version: 1.0.0\n',
+        '# yarn lockfile v1\n"foo@^1.0.0":\n  version ""\n',
+    ],
+)
+def test_malformed_yarn_lockfile_marks_report_incomplete(tmp_path, lock_body):
+    (tmp_path / "yarn.lock").write_text(lock_body, encoding="utf-8")
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert report.errors == ("yarn.lock: could not safely parse lockfile",)
+
+
 def test_parses_uv_and_go_lockfiles(tmp_path):
     (tmp_path / "uv.lock").write_text(
         'version = 1\n\n[[package]]\nname = "httpx"\nversion = "0.27.0"\n'
