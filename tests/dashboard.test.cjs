@@ -111,7 +111,7 @@ function fakeDocument() {
 
 test("accepts a complete version 1 report and keeps only allowlisted fields", () => {
   const report = parseReport(JSON.stringify(sample({})));
-  assert.equal(report.repository, "owner/repo");
+  assert.equal(report.header, "owner/repo · main");
   assert.equal(report.findings.length, 2);
   assert.equal(report.findings[0].title, "<img src=x onerror=alert(1)>");
   assert.equal("secret" in report.findings[0], false);
@@ -183,12 +183,12 @@ test("invalid imports clear previously rendered findings", async () => {
   rows.append(new FakeElement("tr"));
   initDashboard(doc);
   fileInput.files = [
-    { size: 4, text: async () => JSON.stringify(sample({ status: "incomplete" })) },
+    { size: 4, text: async () => JSON.stringify(sample({ status: "invalid" })) },
   ];
   await fileInput.handlers.change();
   assert.equal(dashboard.hidden, true);
   assert.equal(rows.children.length, 0);
-  assert.match(doc.getElementById("status").textContent, /incompleto/);
+  assert.match(doc.getElementById("status").textContent, /estado/);
 });
 
 test("oversized imports are rejected before the file is read", async () => {
