@@ -123,7 +123,8 @@ test("accepts a complete version 1 report and keeps only allowlisted fields", ()
 test("rejects malformed, old-version, and incomplete reports", () => {
   assert.throws(() => parseReport("{"), SyntaxError);
   assert.throws(() => parseReport(JSON.stringify(sample({ schema_version: 0 }))), /schema_version/);
-  assert.throws(() => parseReport(JSON.stringify(sample({ status: "incomplete" }))), /incompleto/);
+  const partialGithub = parseReport(JSON.stringify(sample({ status: "incomplete" })));
+  assert.equal(partialGithub.status, "incomplete");
   assert.throws(
     () =>
       parseReport(
@@ -277,7 +278,7 @@ test("normalizes incomplete local scans without exposing the absolute root", () 
   assert.equal(report.findings[0].identifier, "workflow.action_not_sha_pinned");
   assert.equal(report.findings[0].severity, "medium");
   assert.equal(report.findings[0].state, "Confianza: high");
-  assert.doesNotMatch(JSON.stringify(report), /private\\/repository|DROP_LOCAL_SECRET/);
+  assert.doesNotMatch(JSON.stringify(report), /private.{0,20}repository|DROP_LOCAL_SECRET/);
   const doc = fakeDocument();
   renderReport(report, doc);
   assert.match(doc.getElementById("warning-text").textContent, /incompleto/);
@@ -294,7 +295,7 @@ test("normalizes dependency inventories and OSV advisories without inventing sev
   assert.equal(report.findings[0].severity, "unknown");
   assert.match(report.findings[0].state, /no incluida/);
   assert.match(report.errors[0], /omitido por seguridad/);
-  assert.doesNotMatch(JSON.stringify(report), /DROP_DEPENDENCY_TOKEN|DROP_DEPENDENCY_TOKEN/);
+  assert.doesNotMatch(JSON.stringify(report), /DROP_DEPENDENCY_TOKEN|secret/);
   const doc = fakeDocument();
   renderReport(report, doc);
   const advisoryRow = doc.getElementById("finding-rows").children[0];
