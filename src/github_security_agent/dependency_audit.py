@@ -13,7 +13,7 @@ import os
 import re
 import stat
 import tomllib
-import yaml
+import yaml  # type: ignore[import-untyped]
 import time
 import urllib.error
 import urllib.request
@@ -396,6 +396,8 @@ def _pnpm_locator(key: str) -> tuple[str, str, str]:
     locator = key.lstrip("/")
     peer_suffix = locator.find("(")
     if peer_suffix >= 0:
+        if not locator.endswith(")") or not re.fullmatch(r"(?:\\([^()]+\\))+", locator[peer_suffix:]):
+            raise ValueError("invalid pnpm peer locator")
         locator = locator[:peer_suffix]
     if locator.startswith("@"):
         slash = locator.find("/")
