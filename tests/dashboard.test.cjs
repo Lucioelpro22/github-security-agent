@@ -176,7 +176,9 @@ test("invalid imports clear previously rendered findings", async () => {
   dashboard.hidden = false;
   rows.append(new FakeElement("tr"));
   initDashboard(doc);
-  fileInput.files = [{ size: 4, text: async () => '{"status":"incomplete"}' }];
+  fileInput.files = [
+    { size: 4, text: async () => JSON.stringify(sample({ status: "incomplete" })) },
+  ];
   await fileInput.handlers.change();
   assert.equal(dashboard.hidden, true);
   assert.equal(rows.children.length, 0);
