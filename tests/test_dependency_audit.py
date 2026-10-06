@@ -55,7 +55,8 @@ def test_parses_npm_and_toml_lockfiles(tmp_path):
 
 def test_parses_uv_and_go_lockfiles(tmp_path):
     (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "httpx"\nversion = "0.27.0"\n',
+        'version = 1\n\n[[package]]\nname = "httpx"\nversion = "0.27.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n',
         encoding="utf-8",
     )
     (tmp_path / "go.sum").write_text(
@@ -71,6 +72,32 @@ def test_parses_uv_and_go_lockfiles(tmp_path):
     assert {(item.name, item.version, item.ecosystem) for item in report.dependencies} == {
         ("httpx", "0.27.0", "PyPI"),
         ("golang.org/x/text", "v0.16.0", "Go"),
+    }
+
+
+def test_uv_osv_lookup_skips_git_and_private_registry_packages(tmp_path, monkeypatch):
+    (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n'
+        '[[package]]\nname = "public-lib"\nversion = "1.0.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        '[[package]]\nname = "internal-lib"\nversion = "2.0.0"\n'
+        'source = { registry = "https://packages.internal/simple" }\n\n'
+        '[[package]]\nname = "git-lib"\nversion = "3.0.0"\n'
+        'source = { git = "https://example.com/team/lib" }\n',
+        encoding="utf-8",
+    )
+    sent = []
+    monkeypatch.setattr(audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[]])
+
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+
+    assert report.status == "incomplete"
+    assert report.advisory_lookup == "incomplete"
+    assert [item.name for item in sent] == ["public-lib"]
+    assert {item.source_kind for item in report.dependencies} == {
+        "registry-pypi",
+        "registry-other",
+        "git",
     }
 
 
