@@ -119,6 +119,17 @@ test("rejects malformed, old-version, and incomplete reports", () => {
   assert.throws(() => parseReport("{"), SyntaxError);
   assert.throws(() => parseReport(JSON.stringify(sample({ schema_version: 0 }))), /schema_version/);
   assert.throws(() => parseReport(JSON.stringify(sample({ status: "incomplete" }))), /incompleto/);
+  assert.throws(
+    () =>
+      parseReport(
+        JSON.stringify(
+          sample({
+            findings: [{ alert_class: "actions", severity: "low" }],
+          })
+        )
+      ),
+    /categoría o severidad/
+  );
 });
 
 test("enforces the alert-count and per-finding schema limits", () => {
@@ -188,6 +199,7 @@ test("oversized imports are rejected before the file is read", async () => {
   ];
   await fileInput.handlers.change();
   assert.equal(wasRead, false);
+  assert.equal(fileInput.value, "");
   assert.match(doc.getElementById("status").textContent, /5 MB/);
 });
 
