@@ -70,15 +70,105 @@ class DependencyReport:
     errors: tuple[str, ...]
 
 
+def _public_registry_url(value: str, host: str, paths: set[str]) -> bool:
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == host
+            and parsed.path.rstrip("/") in paths
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port is None
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
+def _poetry_source_kind(source: Any) -> str:
+    if source is None:
+        return "registry-pypi"
+    if not isinstance(source, dict):
+        return "unknown"
+    source_type = source.get("type")
+    if source_type == "legacy" and isinstance(source.get("url"), str):
+        return (
+            "registry-pypi"
+            if _public_registry_url(source["url"], "pypi.org", {"/simple"})
+            else "registry-other"
+        )
+    if source_type == "git":
+        return "git"
+    if source_type in {"directory", "file"}:
+        return "directory"
+    if source_type == "url":
+        return "url"
+    return "unknown"
+
+
+def _cargo_source_kind(source: Any) -> str:
+    if source is None:
+        return "workspace"
+    if not isinstance(source, str):
+        return "unknown"
+    if source.startswith("registry+"):
+        registry = source.removeprefix("registry+")
+        return (
+            "registry-cratesio"
+            if _public_registry_url(
+                registry, "github.com", {"/rust-lang/crates.io-index"}
+            )
+            or _public_registry_url(registry, "index.crates.io", {""})
+            else "registry-other"
+        )
+    if source.startswith("sparse+"):
+        registry = source.removeprefix("sparse+")
+        return (
+            "registry-cratesio"
+            if _public_registry_url(registry, "index.crates.io", {""})
+            else "registry-other"
+        )
+    if source.startswith("git+"):
+        return "git"
+    return "unknown"
+
+
+def _npm_source_kind(value: Any) -> str:
+    if not isinstance(value, str):
+        return "unknown"
+    return (
+        "registry-npm"
+        if _public_registry_url(value, "registry.npmjs.org", set())
+        else "registry-other"
+    )
+
+
 def _parse_requirements(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     records: list[Dependency] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    alternate_index = any(
+        line.split("#", 1)[0].strip().startswith(
+            ("--index-url", "--extra-index-url", "--find-links", "-i ", "--trusted-host")
+        )
+        for line in lines
+    )
+    for line in lines:
         line = line.split("#", 1)[0].strip()
         match = _PINNED.fullmatch(line)
         if match:
             if len(records) >= limit:
                 return records, True
-            records.append(Dependency(match.group(1), match.group(2), "PyPI", path))
+            records.append(
+                Dependency(
+                    match.group(1),
+                    match.group(2),
+                    "PyPI",
+                    path,
+                    "registry-other" if alternate_index else "registry-pypi",
+                )
+            )
     return records, False
 
 
@@ -98,7 +188,9 @@ def _walk_npm_dependencies(
             if isinstance(version, str) and version:
                 if len(records) >= limit:
                     return records, True
-                records.append(Dependency(name, version, "npm", path))
+                records.append(
+                    Dependency(name, version, "npm", path, _npm_source_kind(value.get("resolved")))
+                )
             nested = value.get("dependencies")
             if isinstance(nested, dict):
                 pending.append(nested)
@@ -164,7 +256,9 @@ def _parse_lockfile(
                 if isinstance(version, str) and name:
                     if len(records) >= limit:
                         return records, True
-                    records.append(Dependency(name, version, "npm", relative))
+                    records.append(
+                        Dependency(name, version, "npm", relative, _npm_source_kind(value.get("resolved")))
+                    )
         if not records and isinstance(data, dict):
             return _walk_npm_dependencies(data.get("dependencies"), relative, limit)
         return records, False
@@ -185,7 +279,12 @@ def _parse_lockfile(
             ):
                 if len(toml_records) >= limit:
                     return toml_records, True
-                source_kind = _uv_source_kind(item.get("source")) if path.name == "uv.lock" else None
+                if path.name == "uv.lock":
+                    source_kind = _uv_source_kind(item.get("source"))
+                elif path.name == "poetry.lock":
+                    source_kind = _poetry_source_kind(item.get("source"))
+                else:
+                    source_kind = _cargo_source_kind(item.get("source"))
                 toml_records.append(
                     Dependency(item["name"], item["version"], ecosystem, relative, source_kind)
                 )
