@@ -327,7 +327,7 @@ test("keeps OSV lookup states distinct and preserves incomplete dependency repor
     errors: ["OSV lookup failed: OSError"],
   })));
   assert.equal(partial.status, "incomplete");
-  assert.equal(partial.errors[0], "OSV lookup failed: OSError");
+  assert.equal(partial.errors[0], "Falló una consulta a OSV.");
 });
 
 test("rejects malformed partial reports and oversized normalized item lists", () => {
