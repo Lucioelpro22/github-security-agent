@@ -168,8 +168,15 @@ function renderReport(report, doc) {
   };
 
   for (const id of ["search", "class-filter", "severity-filter"]) {
-    doc.getElementById(id).addEventListener("input", applyFilters);
-    doc.getElementById(id).addEventListener("change", applyFilters);
+    const control = doc.getElementById(id);
+    const previous = control.dashboardFilterHandler;
+    if (previous) {
+      control.removeEventListener("input", previous);
+      control.removeEventListener("change", previous);
+    }
+    control.dashboardFilterHandler = applyFilters;
+    control.addEventListener("input", applyFilters);
+    control.addEventListener("change", applyFilters);
   }
   applyFilters();
 }
@@ -181,6 +188,10 @@ function clearDashboard(doc) {
   doc.getElementById("repository-name").textContent = "";
   doc.getElementById("provider-name").textContent = "";
   doc.getElementById("result-count").textContent = "";
+  doc.getElementById("empty-results").hidden = true;
+  doc.getElementById("search").value = "";
+  doc.getElementById("class-filter").value = "";
+  doc.getElementById("severity-filter").value = "";
 }
 
 function initDashboard(doc) {
