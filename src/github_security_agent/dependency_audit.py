@@ -13,13 +13,14 @@ import os
 import re
 import stat
 import tomllib
+import yaml  # type: ignore[import-untyped]
 import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
-from typing import Any
+from typing import Any, ClassVar, cast
 
 MAX_LOCKFILE_BYTES = 2_000_000
 MAX_TOTAL_BYTES = 20_000_000
@@ -343,6 +344,199 @@ def _parse_yarn_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
     return records, False
 
 
+MAX_PNPM_YAML_EVENTS = 100_000
+MAX_PNPM_YAML_DEPTH = 64
+MAX_PNPM_YAML_ALIASES = 64
+
+
+class _StrictPnpmLoader(yaml.SafeLoader):  # type: ignore[misc]
+    """Safe YAML loader with duplicate-key, depth, and node limits."""
+
+    yaml_implicit_resolvers: ClassVar[dict[Any, Any]] = {}
+
+    def __init__(self, stream: Any) -> None:
+        super().__init__(stream)
+        self.node_count = 0
+        self.depth = 0
+        self.alias_count = 0
+        self.started_at = time.monotonic()
+
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        if self.check_event(yaml.AliasEvent):
+            self.alias_count += 1
+            if self.alias_count > MAX_PNPM_YAML_ALIASES:
+                raise yaml.YAMLError("too many YAML aliases")
+        self.depth += 1
+        self.node_count += 1
+        if self.depth > MAX_PNPM_YAML_DEPTH or self.node_count > MAX_PNPM_YAML_EVENTS:
+            raise yaml.YAMLError("YAML resource limit exceeded")
+        if time.monotonic() - self.started_at > MAX_SCAN_SECONDS:
+            raise yaml.YAMLError("YAML parse time limit exceeded")
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self.depth -= 1
+
+    def construct_mapping(self, node: Any, deep: bool = False) -> dict[str, Any]:
+        if not isinstance(node, yaml.MappingNode):
+            raise yaml.YAMLError("expected a YAML mapping")
+        seen: set[str] = set()
+        for key_node, _value_node in node.value:
+            if not isinstance(key_node, yaml.ScalarNode) or key_node.value == "<<":
+                raise yaml.YAMLError("unsupported YAML mapping key")
+            key = self.construct_object(key_node, deep=True)
+            if not isinstance(key, str) or key in seen:
+                raise yaml.YAMLError("duplicate or non-string YAML mapping key")
+            seen.add(key)
+        return cast(dict[str, Any], super().construct_mapping(node, deep=deep))
+
+
+def _pnpm_locator(key: str) -> tuple[str, str, str]:
+    locator = key.lstrip("/")
+    peer_suffix = locator.find("(")
+    if peer_suffix >= 0:
+        if not locator.endswith(")") or not re.fullmatch(
+            r"\([^()]+\)(?:\([^()]+\))*", locator[peer_suffix:]
+        ):
+            raise ValueError("invalid pnpm peer locator")
+        locator = locator[:peer_suffix]
+    if locator.startswith("@"):
+        slash = locator.find("/")
+        separator = locator.find("@", slash + 1) if slash >= 0 else -1
+        if slash <= 1 or separator <= slash + 1:
+            raise ValueError("invalid pnpm package locator")
+    else:
+        separator = locator.find("@")
+        if separator <= 0:
+            raise ValueError("invalid pnpm package locator")
+    name, version = locator[:separator], locator[separator + 1 :]
+    if not version or not _SAFE_VERSION.fullmatch(version):
+        raise ValueError("invalid pnpm package version")
+    if not (
+        _SAFE_SCOPED_NAME.fullmatch(name)
+        if name.startswith("@")
+        else _SAFE_UNSCOPED_NAME.fullmatch(name)
+    ):
+        raise ValueError("invalid pnpm package name")
+    return name, version, locator
+
+
+def _pnpm_source_kind(metadata: Any) -> str:
+    if not isinstance(metadata, dict):
+        return "unknown"
+    resolution = metadata.get("resolution")
+    if not isinstance(resolution, dict):
+        return "unknown"
+    tarball = resolution.get("tarball")
+    if not isinstance(tarball, str):
+        return "unknown"
+    return (
+        "registry-npm"
+        if _public_registry_url(tarball, "registry.npmjs.org", set())
+        else "registry-other"
+    )
+
+
+def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    event_count = 0
+    started_at = time.monotonic()
+    try:
+        for event in yaml.parse(text, Loader=_StrictPnpmLoader):
+            event_count += 1
+            if (
+                event_count > MAX_PNPM_YAML_EVENTS
+                or time.monotonic() - started_at > MAX_SCAN_SECONDS
+            ):
+                raise ValueError("pnpm YAML resource limit exceeded")
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None:
+                raise ValueError("pnpm YAML aliases and anchors are not supported")
+        documents: list[Any] = []
+        loader = _StrictPnpmLoader(text)
+        try:
+            while loader.check_data():
+                if len(documents) >= 2:
+                    raise ValueError("too many pnpm YAML documents")
+                documents.append(loader.get_data())
+        finally:
+            loader.dispose()
+    except yaml.YAMLError as error:
+        raise ValueError("invalid pnpm YAML") from error
+    if not documents or any(not isinstance(document, dict) for document in documents):
+        raise ValueError("pnpm lockfile must contain mapping documents")
+
+    unique: dict[tuple[str, str], Dependency] = {}
+    for document in documents:
+        if document.get("lockfileVersion") != "9.0":
+            raise ValueError("unsupported pnpm lockfile version")
+        importers = document.get("importers")
+        packages = document.get("packages")
+        snapshots = document.get("snapshots")
+        if not all(isinstance(item, dict) for item in (importers, packages, snapshots)):
+            raise ValueError("invalid pnpm lockfile structure")
+        document_snapshots: dict[tuple[str, str], Any] = {}
+        for snapshot_key, snapshot in snapshots.items():
+            if not isinstance(snapshot_key, str) or not isinstance(snapshot, dict):
+                raise ValueError("invalid pnpm snapshot")
+            name, version, package_key = _pnpm_locator(snapshot_key)
+            metadata = packages.get(package_key)
+            if not isinstance(metadata, dict):
+                raise ValueError("pnpm snapshot has no package metadata")
+            identity = (name, version)
+            document_snapshots[identity] = snapshot
+            source_kind = _pnpm_source_kind(metadata)
+            if identity in unique:
+                previous = unique[identity]
+                if previous.source_kind != source_kind:
+                    unique[identity] = Dependency(name, version, "npm", path, "unknown")
+            elif len(unique) >= limit:
+                return list(unique.values()), True
+            else:
+                unique[identity] = Dependency(name, version, "npm", path, source_kind)
+
+        def validate_reference(
+            name: Any, version: Any, available: dict[tuple[str, str], Any]
+        ) -> None:
+            if not isinstance(name, str) or not isinstance(version, str) or not version:
+                raise ValueError("invalid pnpm dependency reference")
+            if version.startswith(("link:", "workspace:", "file:", "directory:")):
+                return
+            if version.startswith("npm:"):
+                target = version.removeprefix("npm:")
+                target_name, target_version, _ = _pnpm_locator(target)
+            else:
+                target_name, target_version, _ = _pnpm_locator(f"{name}@{version}")
+            if (target_name, target_version) not in available:
+                raise ValueError("pnpm dependency has no snapshot")
+
+        dependency_sections = (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "configDependencies",
+            "packageManagerDependencies",
+        )
+        for importer_path, importer in importers.items():
+            if not isinstance(importer_path, str) or not isinstance(importer, dict):
+                raise ValueError("invalid pnpm importer")
+            for section in dependency_sections:
+                references = importer.get(section, {})
+                if not isinstance(references, dict):
+                    raise ValueError("invalid pnpm importer dependencies")
+                for package_name, reference in references.items():
+                    if not isinstance(reference, dict):
+                        raise ValueError("invalid pnpm importer dependency")
+                    validate_reference(package_name, reference.get("version"), document_snapshots)
+
+        for snapshot in document_snapshots.values():
+            for section in ("dependencies", "optionalDependencies"):
+                references = snapshot.get(section, {})
+                if not isinstance(references, dict):
+                    raise ValueError("invalid pnpm snapshot dependencies")
+                for package_name, version in references.items():
+                    validate_reference(package_name, version, document_snapshots)
+    return list(unique.values()), False
+
+
 def _parse_go_sum(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     records: list[Dependency] = []
     for line in text.splitlines():
@@ -391,6 +585,8 @@ def _parse_lockfile(
         return _parse_requirements(text, relative, limit)
     if path.name == "yarn.lock":
         return _parse_yarn_lock(text, relative, limit)
+    if path.name == "pnpm-lock.yaml":
+        return _parse_pnpm_lock(text, relative, limit)
     if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         data = json.loads(text)
         records: list[Dependency] = []
@@ -533,6 +729,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "package-lock.json",
         "npm-shrinkwrap.json",
         "yarn.lock",
+        "pnpm-lock.yaml",
         "poetry.lock",
         "uv.lock",
         "Cargo.lock",

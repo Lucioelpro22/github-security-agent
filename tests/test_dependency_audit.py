@@ -542,3 +542,122 @@ def test_exact_lockfile_limit_without_additional_lockfiles_is_complete(tmp_path,
 
     assert report.status == "complete"
     assert report.manifests_scanned == 1
+
+
+def test_pnpm_v9_inventory_uses_snapshots_and_public_tarball_for_osv(tmp_path, monkeypatch):
+    (tmp_path / "pnpm-lock.yaml").write_text(
+        "lockfileVersion: '9.0'\n"
+        "settings: {}\n"
+        "importers:\n"
+        "  .:\n"
+        "    dependencies:\n"
+        "      react: {specifier: ^19.0.0, version: 19.0.0}\n"
+        "packages:\n"
+        "  react@19.0.0:\n"
+        "    resolution: {tarball: https://registry.npmjs.org/react/-/react-19.0.0.tgz}\n"
+        "  '@scope/public@1.2.3':\n"
+        "    resolution: {tarball: https://registry.npmjs.org/@scope/public/-/public-1.2.3.tgz}\n"
+        "  private-lib@2.0.0:\n"
+        "    resolution: {tarball: https://packages.internal/private-lib.tgz}\n"
+        "snapshots:\n"
+        "  react@19.0.0: {}\n"
+        "  '@scope/public@1.2.3(peer@18.0.0)': {}\n"
+        "  private-lib@2.0.0: {}\n",
+        encoding="utf-8",
+    )
+    sent = []
+    monkeypatch.setattr(
+        audit, "_post_osv_batch", lambda batch: sent.extend(batch) or [[] for _ in batch]
+    )
+
+    report = audit.audit_dependencies(tmp_path, query_osv=True)
+
+    assert report.status == "incomplete"
+    assert report.advisory_lookup == "incomplete"
+    assert {(item.name, item.version, item.source_kind) for item in report.dependencies} == {
+        ("react", "19.0.0", "registry-npm"),
+        ("@scope/public", "1.2.3", "registry-npm"),
+        ("private-lib", "2.0.0", "registry-other"),
+    }
+    assert {item.name for item in sent} == {"react", "@scope/public"}
+
+
+def test_pnpm_two_document_lockfile_includes_environment_packages(tmp_path):
+    (tmp_path / "pnpm-lock.yaml").write_text(
+        "---\n"
+        "lockfileVersion: '9.0'\n"
+        "importers: {'.': {packageManagerDependencies: {pnpm: {specifier: 9.0.0, version: 9.0.0}}}}\n"
+        "packages: {pnpm@9.0.0: {resolution: {tarball: https://registry.npmjs.org/pnpm/-/pnpm-9.0.0.tgz}}}\n"
+        "snapshots: {pnpm@9.0.0: {}}\n"
+        "---\n"
+        "lockfileVersion: '9.0'\n"
+        "importers: {'.': {dependencies: {app: {specifier: ^1.0.0, version: 1.0.0}}}}\n"
+        "packages: {app@1.0.0: {resolution: {tarball: https://registry.npmjs.org/app/-/app-1.0.0.tgz}}}\n"
+        "snapshots: {app@1.0.0: {}}\n",
+        encoding="utf-8",
+    )
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "complete"
+    assert {(item.name, item.version) for item in report.dependencies} == {
+        ("pnpm", "9.0.0"),
+        ("app", "1.0.0"),
+    }
+
+
+@pytest.mark.parametrize(
+    "lock_body",
+    [
+        "lockfileVersion: '8.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n"
+        "snapshots:\n  foo@1.0.0: {}\n",
+        "lockfileVersion: '9.0'\n"
+        "importers: {'.': {dependencies: {foo: {specifier: ^1.0.0, version: 1.0.0}}}}\n"
+        "packages: {}\nsnapshots: {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n"
+        "packages:\n  foo@1.0.0: {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\nsnapshots: {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {foo@1.0.0: {}}\nsnapshots: {foo@1.0.0: invalid}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: &items {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: *items\n",
+        "lockfileVersion: '9.0'\nimporters: {'.': {}}\n"
+        "packages: {'foo@git+https://example.com/repo#abcdef': {resolution: {commit: abcdef}}}\n"
+        "snapshots: {'foo@git+https://example.com/repo#abcdef': {}}\n",
+        "!!python/object/apply:os.system ['echo unsafe']",
+        "- not-a-mapping",
+    ],
+)
+def test_malformed_or_unsupported_pnpm_lockfiles_mark_report_incomplete(tmp_path, lock_body):
+    (tmp_path / "pnpm-lock.yaml").write_text(lock_body, encoding="utf-8")
+
+    report = audit.audit_dependencies(tmp_path)
+
+    assert report.status == "incomplete"
+    assert report.dependencies == ()
+    assert report.errors == ("pnpm-lock.yaml: could not safely parse lockfile",)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    ["foo", "foo@", "foo@1.0.0(unclosed", "foo@not-a-version", "@scope@1.0.0"],
+)
+def test_pnpm_rejects_malformed_package_locators(locator):
+    with pytest.raises(ValueError):
+        audit._pnpm_locator(locator)
+
+
+def test_pnpm_limit_and_unknown_sources_are_explicit():
+    text = (
+        "lockfileVersion: '9.0'\n"
+        "importers: {'.': {}}\n"
+        "packages:\n"
+        "  first@1.0.0: {resolution: {tarball: https://registry.npmjs.org/first.tgz}}\n"
+        "  second@2.0.0: {resolution: {tarball: https://registry.npmjs.org.evil.example/second.tgz}}\n"
+        "snapshots: {first@1.0.0: {}, second@2.0.0: {}}\n"
+    )
+
+    records, truncated = audit._parse_pnpm_lock(text, "pnpm-lock.yaml", 1)
+
+    assert truncated
+    assert [(item.name, item.source_kind) for item in records] == [("first", "registry-npm")]
