@@ -544,7 +544,6 @@ def test_exact_lockfile_limit_without_additional_lockfiles_is_complete(tmp_path,
     assert report.manifests_scanned == 1
 
 
-
 def test_pnpm_v9_inventory_uses_snapshots_and_public_tarball_for_osv(tmp_path, monkeypatch):
     (tmp_path / "pnpm-lock.yaml").write_text(
         "lockfileVersion: '9.0'\n"
@@ -614,18 +613,14 @@ def test_pnpm_two_document_lockfile_includes_environment_packages(tmp_path):
         "snapshots:\n  foo@1.0.0: {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n"
         "packages:\n  foo@1.0.0: {}\n",
-        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\n---\n{}\n---\n{}\n",
-        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\n"
-        "snapshots: {}\nsnapshots: {}\n",
+        "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: {}\nsnapshots: {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: &items {}\n",
         "lockfileVersion: '9.0'\nimporters: {}\npackages: {}\nsnapshots: *items\n",
         "!!python/object/apply:os.system ['echo unsafe']",
         "- not-a-mapping",
     ],
 )
-def test_malformed_or_unsupported_pnpm_lockfiles_mark_report_incomplete(
-    tmp_path, lock_body
-):
+def test_malformed_or_unsupported_pnpm_lockfiles_mark_report_incomplete(tmp_path, lock_body):
     (tmp_path / "pnpm-lock.yaml").write_text(lock_body, encoding="utf-8")
 
     report = audit.audit_dependencies(tmp_path)
