@@ -18,7 +18,7 @@
         <p class="eyebrow">GITHUB SECURITY AGENT</p>
         <h1>Visor local de hallazgos</h1>
         <p class="lede">
-          Abrí un informe JSON de `scan` o `plan` con esquema compatible. Los informes de `scan-local` y `audit-dependencies` aún no se admiten.
+          Abrí un informe JSON del CLI: scan, plan, scan-local o audit-dependencies. Los resultados se procesan en esta página y no se envían a ningún servicio.
         </p>
         <input id="report-file" type="file" accept=".json,application/json">
         <label class="file-picker" for="report-file">Seleccionar informe JSON</label>
@@ -26,10 +26,14 @@
       </header>
 
       <section id="status" class="status" role="status" aria-live="polite">
-        Seleccioná un informe completo compatible para comenzar.
+        Seleccioná un informe JSON compatible. Los informes incompletos se mostrarán como parciales.
       </section>
 
       <section id="dashboard" hidden aria-label="Resumen del informe">
+        <aside id="report-warning" class="report-warning" role="alert" hidden>
+          <p id="warning-text"></p>
+          <ul id="warning-errors"></ul>
+        </aside>
         <div class="report-meta">
           <div>
             <p class="eyebrow">INFORME CARGADO</p>
@@ -61,6 +65,8 @@
                 <option value="dependabot">Dependabot</option>
                 <option value="code_scanning">Code Scanning</option>
                 <option value="secret_scanning">Secret Scanning</option>
+                <option value="local_scan">Análisis local</option>
+                <option value="dependency_advisory">Avisos OSV</option>
               </select>
             </label>
             <label>
@@ -91,6 +97,29 @@
             </table>
           </div>
           <p id="empty-results" class="empty-results" hidden>No hay hallazgos que coincidan con estos filtros.</p>
+        </section>
+
+        <section id="dependency-inventory" class="results inventory" aria-labelledby="dependency-heading" hidden>
+          <div class="results-heading">
+            <div>
+              <p class="eyebrow">INVENTARIO DE PAQUETES</p>
+              <h2 id="dependency-heading">Dependencias detectadas</h2>
+            </div>
+            <p class="result-count">Sin clasificación de riesgo por paquete</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Paquete</th>
+                  <th scope="col">Versión</th>
+                  <th scope="col">Ecosistema</th>
+                  <th scope="col">Lockfile</th>
+                </tr>
+              </thead>
+              <tbody id="dependency-rows"></tbody>
+            </table>
+          </div>
         </section>
       </section>
 
