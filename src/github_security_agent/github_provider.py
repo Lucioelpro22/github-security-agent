@@ -48,7 +48,10 @@ class GitHubApiProvider:
         )
         findings: list[SecurityFinding] = []
         for alert_class, endpoint in endpoints:
-            findings.extend(self._list_alerts(target, alert_class, endpoint))
+            try:
+                findings.extend(self._list_alerts(target, alert_class, endpoint))
+            except GitHubProviderError as exc:
+                raise GitHubProviderError(f"{alert_class}: {exc}") from None
         return findings
 
     def _list_alerts(
@@ -93,7 +96,7 @@ class GitHubApiProvider:
             if exc.code == 401:
                 message = "GitHub authentication failed; check the configured token"
             elif exc.code == 403:
-                message = "GitHub denied access; check read permissions and API rate limits"
+                message = "GitHub denied access (HTTP 403); check read permissions, alert feature availability, and API rate limits"
             elif exc.code == 404:
                 message = "GitHub repository or alert feature was not found or is not accessible"
             else:
