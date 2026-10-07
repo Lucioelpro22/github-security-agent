@@ -7,6 +7,7 @@ import json
 import os
 import re
 import time
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -39,6 +40,7 @@ class ScanReport:
     files_scanned: int
     files_skipped: int
     findings: tuple[Finding, ...]
+    files_unsupported: int = 0
 
 
 _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -109,8 +111,8 @@ _CONFIG_ROOT = re.compile(r'(?<![\w])"?runAsUser"?\s*:\s*0\b', re.I)
 _DOCKER_ROOT_USER = re.compile(r"^\s*USER\s+root\s*(?:#.*)?$", re.I)
 
 
-def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
-    findings: list[Finding] = []
+def _findings_for(path: Path, relative: str, text: str) -> Iterator[Finding]:
+    """Yield findings lazily so the caller can stop before allocating past its budget."""
     workflow = relative.startswith(".github/workflows/") and path.suffix.lower() in {
         ".yml",
         ".yaml",
@@ -118,32 +120,28 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
     container_config = _is_container_config(relative)
     dockerfile = path.name.lower() == "dockerfile" or path.name.lower().startswith("dockerfile.")
     if _is_environment_file(relative):
-        findings.append(
-            Finding(
-                "config.environment_file_present",
-                "medium",
-                "low",
-                relative,
-                1,
-                "Environment file found; verify it does not contain production values or belong in version control.",
-                "Keep real environment files out of version control and use a secret manager; commit only sanitized examples.",
-            )
+        yield Finding(
+            "config.environment_file_present",
+            "medium",
+            "low",
+            relative,
+            1,
+            "Environment file found; verify it does not contain production values or belong in version control.",
+            "Keep real environment files out of version control and use a secret manager; commit only sanitized examples.",
         )
 
     run_indent: int | None = None
     for line_number, line in enumerate(text.splitlines(), start=1):
         secret_rule = _secret_rule(line)
         if secret_rule:
-            findings.append(
-                Finding(
-                    secret_rule,
-                    "high",
-                    "medium",
-                    relative,
-                    line_number,
-                    "Potential credential detected; the value was redacted.",
-                    "Revoke and rotate the credential if it is real, then move it to a secret manager.",
-                )
+            yield Finding(
+                secret_rule,
+                "high",
+                "medium",
+                relative,
+                line_number,
+                "Potential credential detected; the value was redacted.",
+                "Revoke and rotate the credential if it is real, then move it to a secret manager.",
             )
         if container_config:
             config_true = _CONFIG_TRUE.search(line)
@@ -154,40 +152,34 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                     if key == "allowprivilegeescalation"
                     else "container.privileged_mode"
                 )
-                findings.append(
-                    Finding(
-                        rule_id,
-                        "high",
-                        "high",
-                        relative,
-                        line_number,
-                        "Container configuration explicitly enables a privileged execution setting.",
-                        "Disable the setting unless a documented requirement justifies it; apply least privilege.",
-                    )
-                )
-            if _CONFIG_ROOT.search(line):
-                findings.append(
-                    Finding(
-                        "container.run_as_root",
-                        "high",
-                        "high",
-                        relative,
-                        line_number,
-                        "Container workload is explicitly configured to run as UID 0.",
-                        "Use a dedicated non-root user and apply the minimum filesystem and capability permissions.",
-                    )
-                )
-        if dockerfile and _DOCKER_ROOT_USER.match(line):
-            findings.append(
-                Finding(
-                    "container.dockerfile_root_user",
-                    "medium",
+                yield Finding(
+                    rule_id,
+                    "high",
                     "high",
                     relative,
                     line_number,
-                    "Dockerfile explicitly selects the root user.",
-                    "Use a dedicated non-root runtime user where the application permits it.",
+                    "Container configuration explicitly enables a privileged execution setting.",
+                    "Disable the setting unless a documented requirement justifies it; apply least privilege.",
                 )
+            if _CONFIG_ROOT.search(line):
+                yield Finding(
+                    "container.run_as_root",
+                    "high",
+                    "high",
+                    relative,
+                    line_number,
+                    "Container workload is explicitly configured to run as UID 0.",
+                    "Use a dedicated non-root user and apply the minimum filesystem and capability permissions.",
+                )
+        if dockerfile and _DOCKER_ROOT_USER.match(line):
+            yield Finding(
+                "container.dockerfile_root_user",
+                "medium",
+                "high",
+                relative,
+                line_number,
+                "Dockerfile explicitly selects the root user.",
+                "Use a dedicated non-root runtime user where the application permits it.",
             )
         if not workflow:
             continue
@@ -207,41 +199,38 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
                 else:
                     run_indent = None
         if in_run and _UNTRUSTED_WORKFLOW_VALUE.search(line):
-            findings.append(
-                Finding(
-                    "workflow.untrusted_event_interpolation",
-                    "high",
-                    "high",
-                    relative,
-                    line_number,
-                    "Untrusted pull request or issue data is interpolated into a shell command.",
-                    "Pass the value through an environment variable and quote/validate it; avoid direct expression interpolation in run scripts.",
-                )
+            yield Finding(
+                "workflow.untrusted_event_interpolation",
+                "high",
+                "high",
+                relative,
+                line_number,
+                "Untrusted pull request or issue data is interpolated into a shell command.",
+                "Pass the value through an environment variable and quote/validate it; avoid direct expression interpolation in run scripts.",
             )
 
+        if line.lstrip().startswith("#"):
+            continue
+
         if re.match(r"^\s*permissions\s*:\s*write-all\b", line, re.IGNORECASE):
-            findings.append(
-                Finding(
-                    "workflow.permissions_write_all",
-                    "high",
-                    "high",
-                    relative,
-                    line_number,
-                    "Workflow grants broad write permissions.",
-                    "Declare only the specific permissions the workflow needs, preferably read-only.",
-                )
+            yield Finding(
+                "workflow.permissions_write_all",
+                "high",
+                "high",
+                relative,
+                line_number,
+                "Workflow grants broad write permissions.",
+                "Declare only the specific permissions the workflow needs, preferably read-only.",
             )
         if re.search(r"\bpull_request_target\s*:", line):
-            findings.append(
-                Finding(
-                    "workflow.pull_request_target",
-                    "high",
-                    "medium",
-                    relative,
-                    line_number,
-                    "Privileged pull_request_target trigger needs review for untrusted pull request data.",
-                    "Avoid checking out or executing fork-controlled content with privileged tokens or secrets.",
-                )
+            yield Finding(
+                "workflow.pull_request_target",
+                "high",
+                "medium",
+                relative,
+                line_number,
+                "Privileged pull_request_target trigger needs review for untrusted pull request data.",
+                "Avoid checking out or executing fork-controlled content with privileged tokens or secrets.",
             )
         use = _ACTION_USE.match(line)
         if use:
@@ -251,18 +240,15 @@ def _findings_for(path: Path, relative: str, text: str) -> list[Finding]:
             if "@" in reference:
                 ref = reference.rsplit("@", 1)[1]
                 if not _SHA.fullmatch(ref):
-                    findings.append(
-                        Finding(
-                            "workflow.action_not_sha_pinned",
-                            "medium",
-                            "high",
-                            relative,
-                            line_number,
-                            "Third-party action is referenced by a mutable version or tag.",
-                            "Pin the action to a reviewed full commit SHA and keep its version in a comment.",
-                        )
+                    yield Finding(
+                        "workflow.action_not_sha_pinned",
+                        "medium",
+                        "high",
+                        relative,
+                        line_number,
+                        "Third-party action is referenced by a mutable version or tag.",
+                        "Pin the action to a reviewed full commit SHA and keep its version in a comment.",
                     )
-    return findings
 
 
 def scan_repository(root: str | Path) -> ScanReport:
@@ -282,6 +268,7 @@ def _scan_repository(base: Path, descriptor: int) -> ScanReport:
     findings: list[Finding] = []
     files_scanned = 0
     files_skipped = 0
+    files_unsupported = 0
     total_bytes = 0
     incomplete = os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW")
     limit_reached = False
@@ -308,12 +295,17 @@ def _scan_repository(base: Path, descriptor: int) -> ScanReport:
                 incomplete = True
                 limit_reached = True
                 break
+            if files_scanned + files_skipped >= MAX_FILES:
+                incomplete = True
+                limit_reached = True
+                break
+            if len(findings) >= MAX_FINDINGS:
+                incomplete = True
+                limit_reached = True
+                break
             path = current_path / name
             if path.is_symlink() or not path.is_file():
                 continue
-            if files_scanned + files_skipped >= MAX_FILES:
-                incomplete = True
-                break
             try:
                 data = read_repository_file(
                     descriptor,
@@ -321,22 +313,33 @@ def _scan_repository(base: Path, descriptor: int) -> ScanReport:
                     min(MAX_FILE_BYTES, MAX_TOTAL_BYTES - total_bytes),
                 )
                 total_bytes += len(data)
+            except OSError:
+                files_skipped += 1
+                incomplete = True
+                continue
+            try:
+                if b"\x00" in data:
+                    raise UnicodeDecodeError("utf-8", data, 0, 1, "binary NUL content")
                 text = data.decode("utf-8")
-            except (OSError, UnicodeDecodeError):
+            except UnicodeDecodeError:
+                files_unsupported += 1
                 files_skipped += 1
                 incomplete = True
                 continue
             files_scanned += 1
             relative = path.relative_to(base).as_posix()
-            findings.extend(_findings_for(path, relative, text))
-            if len(findings) >= MAX_FINDINGS:
-                findings = findings[:MAX_FINDINGS]
-                incomplete = True
-                limit_reached = True
+            for finding in _findings_for(path, relative, text):
+                findings.append(finding)
+                if len(findings) >= MAX_FINDINGS:
+                    incomplete = True
+                    limit_reached = True
+                    break
+            if limit_reached:
                 break
         if limit_reached:
             break
         if files_scanned + files_skipped >= MAX_FILES:
+            incomplete = True
             break
 
     findings.sort(key=lambda finding: (finding.file, finding.line, finding.rule_id))
@@ -346,6 +349,7 @@ def _scan_repository(base: Path, descriptor: int) -> ScanReport:
         files_scanned=files_scanned,
         files_skipped=files_skipped,
         findings=tuple(findings),
+        files_unsupported=files_unsupported,
     )
 
 
@@ -363,6 +367,7 @@ def report_markdown(report: ScanReport) -> str:
         f"- Status: **{report.status}**",
         f"- Files scanned: **{report.files_scanned}**",
         f"- Files skipped: **{report.files_skipped}**",
+        f"- Unsupported files: **{report.files_unsupported}**",
         f"- Findings: **{len(report.findings)}**",
         "",
     ]

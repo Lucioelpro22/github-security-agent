@@ -13,7 +13,7 @@ github-security-agent plan --owner Lucioelpro22 --repo github-security-agent --f
 github-security-agent scan-local . --format markdown
 ```
 
-El comando `scan-local` analiza el directorio local como datos: no ejecuta scripts, instala dependencias ni hace llamadas de red. Genera un informe Markdown o JSON. Si el escaneo omite archivos por límites o errores de lectura, marca el resultado como incompleto y devuelve código de salida 2.
+El comando `scan-local` analiza el directorio local como datos: no ejecuta scripts, instala dependencias ni hace llamadas de red. Genera un informe Markdown o JSON. Si el escaneo omite archivos por límites o errores de lectura, marca el resultado como incompleto y devuelve código de salida 2. El contenido con bytes NUL o no UTF-8 también deja el informe incompleto: `files_unsupported` cuenta esos casos como un subconjunto de `files_skipped`. La extensión del archivo no basta para excluirlo.
 
 ## Visor local de informes
 
@@ -33,7 +33,7 @@ El visor admite contratos JSON v1 para los tres tipos. Procesa archivos de hasta
 - Señala permisos `write-all`, el evento `pull_request_target`, acciones de terceros sin SHA completo y expresiones de datos de eventos interpoladas directamente en `run`.
 - Detecta opciones de contenedor explícitamente privilegiadas, ejecución configurada como UID 0, `USER root` en Dockerfiles y archivos `.env` distintos de ejemplos habituales.
 - Los controles de workflows son heurísticos basados en texto, no una validación semántica de YAML. Revisá los hallazgos y posibles falsos positivos.
-- El recorrido omite enlaces simbólicos, directorios comunes de dependencias/caché y archivos mayores de 1 MB; el presupuesto total es 25 MB y 10.000 archivos.
+- El recorrido omite enlaces simbólicos, directorios comunes de dependencias/caché y archivos mayores de 1 MB; el presupuesto total es 25 MB y 10.000 archivos. El límite de 5.000 hallazgos se aplica durante su construcción, incluso en un solo archivo; al alcanzarlo, el informe queda incompleto. Las lecturas conservan el anclaje por descriptores que rechaza enlaces simbólicos en todos los componentes.
 
 Sin credenciales, la integración remota usa el proveedor offline vacío. La API real es optativa y de solo lectura; el token se obtiene únicamente de una variable de entorno.
 

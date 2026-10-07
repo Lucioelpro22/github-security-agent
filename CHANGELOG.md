@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Aplica el límite de hallazgos durante su construcción y conserva las lecturas ancladas a descriptores seguros.
+- Informa contenido NUL/no UTF-8 mediante `files_unsupported`, manteniendo el estado incompleto y el conteo `files_skipped`.
+- Omite ejemplos comentados en las reglas heurísticas de workflows, sin omitir la detección de secretos en comentarios.
+
 ## 0.2.0 — 2026-10-06
 
 - Corrige paginación por cursores de Dependabot y valida inventario autenticado completo el 2026-10-07.
