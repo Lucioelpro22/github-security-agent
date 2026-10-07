@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from .file_reader import open_repository_root, read_repository_file
+
 MAX_FILE_BYTES = 1_000_000
 MAX_TOTAL_BYTES = 25_000_000
 MAX_FILES = 10_000
@@ -269,15 +271,29 @@ def scan_repository(root: str | Path) -> ScanReport:
     if not base.is_dir():
         raise ValueError("scan root must be a directory")
 
+    try:
+        with open_repository_root(base) as descriptor:
+            return _scan_repository(base, descriptor)
+    except OSError:
+        return ScanReport(".", "incomplete", 0, 0, ())
+
+
+def _scan_repository(base: Path, descriptor: int) -> ScanReport:
     findings: list[Finding] = []
     files_scanned = 0
     files_skipped = 0
     total_bytes = 0
-    incomplete = False
+    incomplete = os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW")
     limit_reached = False
     started_at = time.monotonic()
 
-    for current, dirs, files in os.walk(base, topdown=True, followlinks=False):
+    def mark_walk_error(error: OSError) -> None:
+        nonlocal incomplete
+        incomplete = True
+
+    for current, dirs, files in os.walk(
+        base, topdown=True, followlinks=False, onerror=mark_walk_error
+    ):
         if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
             incomplete = True
             break
@@ -299,12 +315,11 @@ def scan_repository(root: str | Path) -> ScanReport:
                 incomplete = True
                 break
             try:
-                size = path.stat().st_size
-                if size > MAX_FILE_BYTES or total_bytes + size > MAX_TOTAL_BYTES:
-                    files_skipped += 1
-                    incomplete = True
-                    continue
-                data = path.read_bytes()
+                data = read_repository_file(
+                    descriptor,
+                    path.relative_to(base),
+                    min(MAX_FILE_BYTES, MAX_TOTAL_BYTES - total_bytes),
+                )
                 total_bytes += len(data)
                 text = data.decode("utf-8")
             except (OSError, UnicodeDecodeError):

@@ -2,6 +2,9 @@
 
 ## 0.2.0 — 2026-10-06
 
+- Corrige paginación por cursores de Dependabot y valida inventario autenticado completo el 2026-10-07.
+- Endurece lecturas de archivos contra crecimiento y enlaces simbólicos; bloquea también redirecciones del cliente HTTP antiguo.
+
 - Bloquea redirecciones HTTP en GitHub y OSV; prepara un smoke test autenticado manual sin publicar informes.
 
 - Amplía el inventario offline a npm, Yarn, pnpm v9, Poetry, uv, Cargo, Go, Composer y Pipenv spec 6, además de requirements exactos.
