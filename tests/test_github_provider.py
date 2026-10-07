@@ -107,11 +107,11 @@ def test_provider_follows_only_same_origin_next_pages(monkeypatch):
 
     def fake_urlopen(request, timeout):
         seen.append(request.full_url)
-        page = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query).get("page")
-        if "/dependabot/alerts" in request.full_url and page == ["1"]:
+        page = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query).get("after")
+        if "/dependabot/alerts" in request.full_url and page is None:
             return FakeResponse(
                 [{"number": 1, "security_advisory": {"summary": "First"}}],
-                '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&page=2>; type="application/json"; rel="next"',
+                '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&after=cursor-two>; type="application/json"; rel="next"',
             )
         if "/dependabot/alerts" in request.full_url:
             return FakeResponse([{"number": 2, "security_advisory": {"summary": "Second"}}])
@@ -121,7 +121,12 @@ def test_provider_follows_only_same_origin_next_pages(monkeypatch):
     findings = list(GitHubApiProvider(TOKEN).list_findings(RepositoryTarget("owner", "repo")))
 
     assert [finding.identifier for finding in findings] == ["1", "2"]
-    assert any("page=2" in url for url in seen)
+    assert any("after=cursor-two" in url for url in seen)
+    assert all(
+        "page" not in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        for url in seen
+        if "/dependabot/" in url
+    )
 
 
 def test_secret_scanning_pagination_requires_hide_secret():
@@ -166,7 +171,7 @@ def test_provider_fails_closed_when_page_limit_is_reached(monkeypatch):
     def fake_urlopen(request, timeout):
         return FakeResponse(
             [{"number": 1}],
-            '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&page=2>; rel="next"',
+            '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&after=cursor-two>; rel="next"',
         )
 
     monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
@@ -209,3 +214,43 @@ def test_access_failure_identifies_class_without_exporting_payload(monkeypatch, 
     assert "HTTP 403" in message
     assert TOKEN not in message
     assert "PRIVATE_RESPONSE" not in message
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "state=open&per_page=100&page=2",
+        "state=open&per_page=100&after=",
+        "state=open&per_page=100&after=a&after=b",
+        "state=open&per_page=100&after=a&before=b",
+        "state=closed&per_page=100&after=a",
+        "state=open&per_page=100&after=a&extra=b",
+    ],
+)
+def test_dependabot_rejects_invalid_cursor_links(query):
+    endpoint = "/repos/owner/repo/dependabot/alerts?state=open"
+    header = f'<https://api.github.com/repos/owner/repo/dependabot/alerts?{query}>; rel="next"'
+    with pytest.raises(GitHubProviderError, match="unexpected pagination"):
+        _next_url(header, endpoint, expected_page=2)
+
+
+def test_dependabot_rejects_repeated_cursor(monkeypatch):
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        return FakeResponse(
+            [],
+            '<https://api.github.com/repos/owner/repo/dependabot/alerts?state=open&per_page=100&after=repeated>; rel="next"',
+        )
+
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
+    with pytest.raises(GitHubProviderError, match="repeated pagination"):
+        GitHubApiProvider(TOKEN).list_findings(RepositoryTarget("owner", "repo"))
+    assert len(calls) == 2
+
+
+def test_code_scanning_retains_numbered_pagination():
+    endpoint = "/repos/owner/repo/code-scanning/alerts?state=open"
+    url = "https://api.github.com/repos/owner/repo/code-scanning/alerts?state=open&per_page=100&page=2"
+    assert _next_url(f'<{url}>; rel="next"', endpoint, expected_page=2) == url

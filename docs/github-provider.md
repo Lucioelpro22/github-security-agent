@@ -46,3 +46,5 @@ The `Authenticated GitHub smoke test` workflow runs only when manually dispatche
 The workflow installs the reviewed agent before making the token available to the scan step. It has only `contents: read`, does not receive the token on pull requests, does not upload reports, and prints only the completion state. A missing secret, denied feature, redirect or incomplete inventory fails the job; do not describe such a run as successful authentication. Authenticated attempts on 2026-10-07 reached the scan step but were denied access (HTTP 403); a complete authenticated inventory remains unverified.
 
 All HTTP redirects are blocked for GitHub and OSV requests. This prevents automatic forwarding of authentication headers or dependency-query data. See the [Python urllib documentation](https://docs.python.org/3.13/library/urllib.request.html).
+
+Dependabot pagination uses the API-provided `after` cursor and does not send numbered `page` parameters. Cursor links must retain the fixed HTTPS host, repository endpoint, open-state filter, and page size; unexpected parameters and repeated links fail the scan. Other alert classes keep numbered pagination.
