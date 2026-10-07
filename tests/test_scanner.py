@@ -26,3 +26,43 @@ def test_directory_limits_and_git_exclusion(tmp_path: Path):
 
 def test_redaction():
     assert "ghp_" not in redact("Authorization: Bearer ghp_123456789012345678901234567890")
+
+
+def test_directory_does_not_read_external_symlink(tmp_path: Path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "external.txt"
+    outside.write_text("ghp_123456789012345678901234567890")
+    (root / "linked.txt").symlink_to(outside)
+    assert scan_directory(root) == []
+
+
+def test_directory_unsupported_platform_fails_explicitly(tmp_path, monkeypatch):
+    import os
+
+    import pytest
+
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    with pytest.raises(OSError, match="unavailable"):
+        scan_directory(tmp_path)
+
+
+def test_legacy_growth_surfaces_failure(tmp_path, monkeypatch):
+    import os
+
+    import pytest
+
+    from github_security_agent import file_reader
+
+    target = tmp_path / "growing"
+    target.write_bytes(b"safe")
+    original = os.fstat
+
+    def grow(fd):
+        metadata = original(fd)
+        target.write_bytes(b"x" * 101)
+        return metadata
+
+    monkeypatch.setattr(file_reader.os, "fstat", grow)
+    with pytest.raises(OSError, match="exceeds"):
+        scan_directory(tmp_path, ScanPolicy(max_file_bytes=100))

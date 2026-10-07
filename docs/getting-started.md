@@ -25,7 +25,7 @@ Abrir `dashboard/index.html` y cargar uno de esos JSON. El visor no envía ni pe
 
 OSV se activa exclusivamente con `--query-osv`; envía identificadores de paquetes y versiones, que pueden contener nombres privados. Ver README antes de activarlo. La validación de esta versión no hizo consultas OSV.
 
-Para GitHub remoto, seguir [permisos y límites](github-provider.md). El token se obtiene de una variable de entorno y requiere únicamente los permisos de lectura documentados. No se validó acceso remoto autenticado en la muestra real de esta versión.
+Para GitHub remoto, seguir [permisos y límites](github-provider.md). El token se obtiene de una variable de entorno y requiere únicamente los permisos de lectura documentados. El inventario remoto autenticado se completó el 2026-10-07 en el commit `ba42fa3`; ver [la ejecución](https://github.com/Lucioelpro22/github-security-agent/actions/runs/37614861333).
 
 ## Comprobaciones para contribuidores
 
@@ -38,3 +38,7 @@ node --test tests/dashboard.test.cjs
 ```
 
 Consultar [la validación real](validation-2026-10-06.md) y el [modelo de amenazas](threat-model.md). Usar un commit revisado e inmutable al consumir la GitHub Action. La etiqueta/release debe apuntar al commit que haya pasado CI; no se publica una etiqueta automáticamente con la edición del número de versión.
+
+### Local scanning platform requirement
+
+Local repository scanning requires POSIX descriptor-relative no-follow file opens to reject symlink races, including changes to parent directories. On Windows, run local scans in WSL. Native Windows `scan-local` scans fail closed: the CLI reports an incomplete inventory and the legacy `scan_directory` API raises `OSError`. GitHub API scanning is unaffected.

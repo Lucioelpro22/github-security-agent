@@ -1,3 +1,4 @@
+from github_security_agent import repository_scan
 import json
 
 from github_security_agent.repository_scan import (
@@ -177,3 +178,51 @@ def test_detects_privileged_settings_in_json_container_config(tmp_path):
         "container.privileged_mode",
         "container.run_as_root",
     ]
+
+
+def test_growth_after_descriptor_stat_is_bounded(tmp_path, monkeypatch):
+    import os
+
+    from github_security_agent import file_reader
+
+    target = tmp_path / "growing.txt"
+    target.write_bytes(b"safe")
+    original = os.fstat
+
+    def grow_after_stat(fd):
+        metadata = original(fd)
+        target.write_bytes(b"x" * 101)
+        return metadata
+
+    monkeypatch.setattr(repository_scan, "MAX_FILE_BYTES", 100)
+    monkeypatch.setattr(file_reader.os, "fstat", grow_after_stat)
+    report = repository_scan.scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert report.files_scanned == 0
+    assert report.files_skipped == 1
+
+
+def test_actual_total_budget_is_enforced(tmp_path, monkeypatch):
+    (tmp_path / "a.txt").write_bytes(b"a" * 4)
+    (tmp_path / "b.txt").write_bytes(b"b" * 4)
+    monkeypatch.setattr(repository_scan, "MAX_TOTAL_BYTES", 7)
+    report = repository_scan.scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert report.files_scanned == 1
+    assert report.files_skipped == 1
+
+
+def test_unsupported_platform_marks_empty_scan_incomplete(tmp_path, monkeypatch):
+    monkeypatch.setattr(repository_scan.os, "supports_dir_fd", set())
+    assert repository_scan.scan_repository(tmp_path).status == "incomplete"
+
+
+def test_directory_enumeration_error_marks_report_incomplete(tmp_path, monkeypatch):
+    def failing_walk(base, *, topdown, followlinks, onerror):
+        onerror(PermissionError("private traversal error"))
+        return iter(())
+
+    monkeypatch.setattr("github_security_agent.repository_scan.os.walk", failing_walk)
+    report = scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert report.files_scanned == 0
