@@ -69,6 +69,7 @@ def test_oversized_and_invalid_utf8_files_make_scan_incomplete(tmp_path, monkeyp
     report = scan_repository(tmp_path)
     assert report.status == "incomplete"
     assert report.files_skipped == 2
+    assert report.files_unsupported == 1
     assert report.findings == ()
 
 
@@ -226,3 +227,117 @@ def test_directory_enumeration_error_marks_report_incomplete(tmp_path, monkeypat
     report = scan_repository(tmp_path)
     assert report.status == "incomplete"
     assert report.files_scanned == 0
+
+
+def test_finding_construction_is_bounded_with_mixed_detectors(tmp_path, monkeypatch):
+    workflow = tmp_path / ".github/workflows/deployment.yaml"
+    workflow.parent.mkdir(parents=True)
+    token = "github_pat_" + "Q" * 40
+    workflow.write_text(
+        (
+            f"permissions: write-all # {token}\n"
+            "privileged: true\n"
+            "runAsUser: 0\n"
+            "pull_request_target:\n"
+            "- uses: actions/checkout@v4\n"
+        )
+        * 100,
+        encoding="utf-8",
+    )
+    constructed = []
+    original_finding = repository_scan.Finding
+
+    def count_finding(*args, **kwargs):
+        finding = original_finding(*args, **kwargs)
+        constructed.append(finding)
+        return finding
+
+    monkeypatch.setattr(repository_scan, "Finding", count_finding)
+    monkeypatch.setattr(repository_scan, "MAX_FINDINGS", 4)
+    report = scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert len(report.findings) == len(constructed) == 4
+    assert {finding.rule_id for finding in report.findings} == {
+        "secret.github_token",
+        "workflow.permissions_write_all",
+        "container.privileged_mode",
+        "container.run_as_root",
+    }
+
+
+def test_binary_and_invalid_utf8_are_incomplete_and_counted_as_unsupported(tmp_path, monkeypatch):
+    monkeypatch.setattr(repository_scan, "MAX_FILES", 3)
+    token = "github_pat_" + "B" * 40
+    (tmp_path / "binary.txt").write_bytes(token.encode() + b"\x00")
+    (tmp_path / "invalid.txt").write_bytes(token.encode() + b"\xff")
+    (tmp_path / "safe.txt").write_text("safe text", encoding="utf-8")
+    report = scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert report.files_scanned == 1
+    assert report.files_unsupported == 2
+    assert report.files_skipped == 2
+    assert report.findings == ()
+    assert json.loads(report_json(report))["files_unsupported"] == 2
+    assert "unsupported" in report_markdown(report).lower()
+
+
+def test_file_budget_includes_unsupported_before_classification(tmp_path, monkeypatch):
+    (tmp_path / "a.bin").write_bytes(b"binary\x00")
+    (tmp_path / "b.txt").write_text("TOKEN=" + "V" * 32, encoding="utf-8")
+    classified = []
+    original_is_file = repository_scan.Path.is_file
+
+    def track_is_file(path):
+        classified.append(path.name)
+        return original_is_file(path)
+
+    monkeypatch.setattr(repository_scan, "MAX_FILES", 1)
+    monkeypatch.setattr(repository_scan.Path, "is_file", track_is_file)
+    report = scan_repository(tmp_path)
+    assert report.status == "incomplete"
+    assert report.files_unsupported == 1
+    assert report.files_scanned == 0
+    assert report.files_skipped == 1
+    assert report.findings == ()
+    assert "b.txt" not in classified
+
+
+def test_plaintext_secret_with_image_extension_is_scanned(tmp_path):
+    token = "github_pat_" + "J" * 40
+    (tmp_path / "image.png").write_text(token, encoding="utf-8")
+    report = scan_repository(tmp_path)
+    assert report.status == "complete"
+    assert report.files_scanned == 1
+    assert report.files_unsupported == 0
+    assert [finding.rule_id for finding in report.findings] == ["secret.github_token"]
+
+
+def test_commented_workflow_examples_do_not_trigger_workflow_rules(tmp_path):
+    workflow = tmp_path / ".github/workflows/ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "# permissions: write-all\n"
+        "# pull_request_target:\n"
+        "# - uses: actions/checkout@v4\n"
+        "steps:\n"
+        "  - run: |\n"
+        "      echo safe\n",
+        encoding="utf-8",
+    )
+    report = scan_repository(tmp_path)
+    assert report.status == "complete"
+    assert report.findings == ()
+
+
+def test_untrusted_expression_in_shell_comment_still_triggers(tmp_path):
+    workflow = tmp_path / ".github/workflows/ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "steps:\n  - run: |\n      # ${{ github.event.pull_request.title }}\n",
+        encoding="utf-8",
+    )
+    report = scan_repository(tmp_path)
+    assert report.status == "complete"
+    assert [(finding.rule_id, finding.line) for finding in report.findings] == [
+        ("workflow.untrusted_event_interpolation", 3)
+    ]
