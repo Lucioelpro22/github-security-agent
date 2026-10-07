@@ -184,3 +184,28 @@ def test_repository_segments_are_validated(value):
 def test_token_required():
     with pytest.raises(ValueError, match="token is required"):
         GitHubApiProvider(" ")
+
+
+@pytest.mark.parametrize("failed_class", ["dependabot", "code_scanning", "secret_scanning"])
+def test_access_failure_identifies_class_without_exporting_payload(monkeypatch, failed_class):
+    paths = {
+        "dependabot": "/dependabot/alerts",
+        "code_scanning": "/code-scanning/alerts",
+        "secret_scanning": "/secret-scanning/alerts",
+    }
+
+    def fake_urlopen(request, timeout):
+        if paths[failed_class] in request.full_url:
+            raise urllib.error.HTTPError(
+                request.full_url, 403, TOKEN, {}, io.BytesIO(b"PRIVATE_RESPONSE")
+            )
+        return FakeResponse([])
+
+    monkeypatch.setattr("github_security_agent.github_provider.urlopen_no_redirect", fake_urlopen)
+    with pytest.raises(GitHubProviderError) as caught:
+        GitHubApiProvider(TOKEN).list_findings(RepositoryTarget("owner", "repo"))
+    message = str(caught.value)
+    assert message.startswith(f"{failed_class}:")
+    assert "HTTP 403" in message
+    assert TOKEN not in message
+    assert "PRIVATE_RESPONSE" not in message

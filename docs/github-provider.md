@@ -19,6 +19,10 @@ Create a fine-grained token scoped to only the target repository and grant these
 
 The provider requests all three alert classes. If an endpoint is unavailable, inaccessible, or rate-limited, it fails the scan with exit code 2 and does not emit a partial inventory as if it were complete. This also means repositories without a supported alert feature need that feature enabled or a future selective-class option.
 
+Metadata read access is required automatically. No account permissions, organization access, webhook permissions, or write access are needed for these requests.
+
+Failed requests identify the alert class (`dependabot`, `code_scanning`, or `secret_scanning`) without printing the token or raw API response. HTTP 403 alone does not establish whether the token, feature availability, or rate limiting caused the rejection.
+
 Official permission references:
 
 - [Dependabot alerts API](https://docs.github.com/en/rest/dependabot/alerts)
@@ -39,6 +43,6 @@ This provider currently targets GitHub.com. Enterprise Server support remains fu
 
 The `Authenticated GitHub smoke test` workflow runs only when manually dispatched on `main`, targeting this repository. Add the repository Actions secret `SECURITY_AGENT_READ_TOKEN` with a short-lived fine-grained token restricted to `github-security-agent` and the three read-only alert permissions above. Never paste the token into chat or logs. Run the workflow from Actions and revoke the token after testing.
 
-The workflow installs the reviewed agent before making the token available to the scan step. It has only `contents: read`, does not receive the token on pull requests, does not upload reports, and prints only the completion state. A missing secret, denied feature, redirect or incomplete inventory fails the job; do not describe such a run as successful authentication. This workflow has been prepared, not yet run with a real token.
+The workflow installs the reviewed agent before making the token available to the scan step. It has only `contents: read`, does not receive the token on pull requests, does not upload reports, and prints only the completion state. A missing secret, denied feature, redirect or incomplete inventory fails the job; do not describe such a run as successful authentication. Authenticated attempts on 2026-10-07 reached the scan step but were denied access (HTTP 403); a complete authenticated inventory remains unverified.
 
 All HTTP redirects are blocked for GitHub and OSV requests. This prevents automatic forwarding of authentication headers or dependency-query data. See the [Python urllib documentation](https://docs.python.org/3.13/library/urllib.request.html).
