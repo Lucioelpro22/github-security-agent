@@ -59,7 +59,11 @@ class GitHubApiProvider:
     ) -> list[SecurityFinding]:
         url = _page_url(endpoint, 1)
         findings: list[SecurityFinding] = []
+        seen_urls: set[str] = set()
         for page_number in range(1, MAX_PAGES_PER_ALERT_CLASS + 1):
+            if url in seen_urls:
+                raise GitHubProviderError("GitHub returned a repeated pagination link")
+            seen_urls.add(url)
             payload, link_header = self._get_page(url)
             if not isinstance(payload, list) or len(payload) > PER_PAGE:
                 raise GitHubProviderError("GitHub returned an unexpected alert response")
@@ -127,6 +131,8 @@ def _validate_segment(value: str, label: str) -> str:
 
 def _page_url(endpoint: str, page: int) -> str:
     separator = "&" if "?" in endpoint else "?"
+    if urllib.parse.urlsplit(endpoint).path.endswith("/dependabot/alerts"):
+        return f"{API_BASE}{endpoint}{separator}per_page={PER_PAGE}"
     return f"{API_BASE}{endpoint}{separator}per_page={PER_PAGE}&page={page}"
 
 
@@ -147,13 +153,22 @@ def _next_url(link_header: str | None, endpoint: str, *, expected_page: int) -> 
     if parsed.scheme != "https" or parsed.netloc != "api.github.com":
         raise GitHubProviderError("GitHub returned an unsafe pagination link")
     expected_path = urllib.parse.urlsplit(API_BASE + endpoint).path
-    query = urllib.parse.parse_qs(parsed.query)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    is_dependabot = expected_path.endswith("/dependabot/alerts")
+    if is_dependabot:
+        valid_position = (
+            set(query) == {"state", "per_page", "after"}
+            and len(query.get("after", [])) == 1
+            and 0 < len(query["after"][0]) <= 1024
+        )
+    else:
+        valid_position = len(query.get("page", [])) == 1 and query["page"][0] == str(expected_page)
     if (
         parsed.path != expected_path
         or query.get("state") != ["open"]
         or query.get("per_page") != [str(PER_PAGE)]
-        or len(query.get("page", [])) != 1
-        or query["page"][0] != str(expected_page)
+        or parsed.fragment
+        or not valid_position
         or ("hide_secret=true" in endpoint and query.get("hide_secret") != ["true"])
     ):
         raise GitHubProviderError("GitHub returned an unexpected pagination link")
