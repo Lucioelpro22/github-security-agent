@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-10-08
 
 - Agrega inventario offline de NuGet `packages.lock.json` v3 con aliases de frameworks y overlays RID; mantiene origen desconocido y exclusión total de OSV.
 
