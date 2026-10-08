@@ -56,7 +56,7 @@ _MANIFEST_COMPANIONS = {
     "Pipfile": {"Pipfile.lock"},
     "Cargo.toml": {"Cargo.lock"},
     "go.mod": {"go.sum"},
-    "Gemfile": set(),
+    "Gemfile": {"Gemfile.lock"},
     "pom.xml": set(),
 }
 
@@ -706,11 +706,222 @@ def _parse_pipfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependen
     return records, False
 
 
+_RUBY_NAME = r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}"
+_RUBY_VERSION = re.compile(r"^[0-9][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)*$")
+_RUBY_SPEC = re.compile(rf"^    ({_RUBY_NAME}) \(([^()\s]{{1,128}})\)$")
+_RUBY_REF = re.compile(rf"^({_RUBY_NAME})(?: \(([^()]+)\))?(!)?$")
+
+
+def _ruby_requirement_valid(value: str | None) -> bool:
+    if value is None:
+        return True
+    return all(
+        re.fullmatch(r"(?:~>|>=|<=|!=|>|<|=)?\s*[0-9][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)*", part.strip())
+        for part in value.split(",")
+    )
+
+
+def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    """Conservative Bundler text inventory; never evaluate Gemfiles or sources."""
+    sections: list[tuple[str, list[str]]] = []
+    incomplete = any(ord(char) < 32 and char not in "\n\r" for char in text)
+    for line in text.splitlines():
+        if not line:
+            continue
+        if not line.startswith(" "):
+            sections.append((line, []))
+        elif sections:
+            sections[-1][1].append(line)
+        else:
+            incomplete = True
+    specs: list[tuple[str, str, str, list[str]]] = []
+    refs: list[tuple[str, bool]] = []
+    checksums: list[tuple[str, str]] = []
+    bundled_versions: list[str] = []
+    seen_metadata: set[str] = set()
+    seen_identities: set[tuple[str, str]] = set()
+    registry_sections = sum(title == "GEM" for title, _ in sections)
+    for title, lines in sections:
+        if title in {"GEM", "GIT", "PATH"}:
+            remotes: list[str] = []
+            in_specs = False
+            current: list[str] | None = None
+            current_names: set[str] = set()
+            headers: set[str] = set()
+            kind = {"GEM": "registry-other", "GIT": "git", "PATH": "directory"}[title]
+            pending: list[tuple[str, str, list[str]]] = []
+            for line in lines:
+                if line == "  specs:":
+                    if in_specs:
+                        incomplete = True
+                    in_specs = True
+                    continue
+                if not in_specs:
+                    match = re.fullmatch(r"  ([a-z_]+): (.+)", line)
+                    if not match:
+                        incomplete = True
+                        continue
+                    key, value = match.groups()
+                    allowed = {
+                        "GEM": {"remote"},
+                        "GIT": {"remote", "revision", "branch", "ref", "tag", "submodules", "glob"},
+                        "PATH": {"remote", "glob"},
+                    }[title]
+                    if key not in allowed or (key in headers and key != "remote"):
+                        incomplete = True
+                    if key == "revision" and not re.fullmatch(
+                        r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", value
+                    ):
+                        incomplete = True
+                    if key == "submodules" and value not in {"true", "false"}:
+                        incomplete = True
+                    headers.add(key)
+                    if key == "remote":
+                        remotes.append(value)
+                    continue
+                match = _RUBY_SPEC.fullmatch(line)
+                if match:
+                    current = []
+                    current_names = set()
+                    name, version = match.groups()
+                    if not re.fullmatch(
+                        r"[0-9][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)*(?:-[A-Za-z0-9][A-Za-z0-9_.-]{0,100})?",
+                        version,
+                    ):
+                        incomplete = True
+                        current = None
+                        continue
+                    if (name, version) in seen_identities:
+                        incomplete = True
+                    seen_identities.add((name, version))
+                    if len(specs) + len(pending) >= limit:
+                        incomplete = True
+                        current = None
+                        continue
+                    pending.append((name, version, current))
+                elif line.startswith("      ") and current is not None:
+                    dependency = _RUBY_REF.fullmatch(line[6:])
+                    if (
+                        dependency
+                        and not dependency.group(3)
+                        and _ruby_requirement_valid(dependency.group(2))
+                    ):
+                        if dependency.group(1) in current_names:
+                            incomplete = True
+                        current_names.add(dependency.group(1))
+                        current.append(dependency.group(1))
+                    else:
+                        incomplete = True
+                else:
+                    incomplete = True
+                    current = None
+            if title == "GIT" and "revision" not in headers:
+                incomplete = True
+            if not in_specs or not remotes or (title != "GEM" and len(remotes) != 1):
+                incomplete = True
+            if (
+                title == "GEM"
+                and len(remotes) == 1
+                and registry_sections == 1
+                and remotes[0] in {"https://rubygems.org", "https://rubygems.org/"}
+            ):
+                kind = "registry-rubygems"
+            for name, version, dependencies in pending:
+                specs.append(
+                    (
+                        name,
+                        version,
+                        kind
+                        if kind in {"git", "directory"} or _RUBY_VERSION.fullmatch(version)
+                        else "unknown",
+                        dependencies,
+                    )
+                )
+        elif title in {"DEPENDENCIES", "PLATFORMS", "RUBY VERSION", "BUNDLED WITH", "CHECKSUMS"}:
+            if title in seen_metadata:
+                incomplete = True
+            seen_metadata.add(title)
+            if (not lines and title != "DEPENDENCIES") or (
+                title in {"RUBY VERSION", "BUNDLED WITH"} and len(lines) != 1
+            ):
+                incomplete = True
+            for line in lines:
+                if title == "DEPENDENCIES":
+                    match = _RUBY_REF.fullmatch(line[2:]) if line.startswith("  ") else None
+                    if match and _ruby_requirement_valid(match.group(2)):
+                        refs.append((match.group(1), bool(match.group(3))))
+                    else:
+                        incomplete = True
+                elif title == "CHECKSUMS":
+                    checksum = re.fullmatch(
+                        rf"  ({_RUBY_NAME}) \(([^()\s]+)\)(?: sha256=[a-fA-F0-9]{{64}}(?:, sha256=[a-fA-F0-9]{{64}})*)?",
+                        line,
+                    )
+                    if checksum:
+                        checksums.append((checksum.group(1), checksum.group(2)))
+                    else:
+                        incomplete = True
+                elif title == "PLATFORMS":
+                    if not re.fullmatch(r"  [A-Za-z0-9_.-]+", line):
+                        incomplete = True
+                elif title == "BUNDLED WITH":
+                    if not line.startswith("   ") or not _RUBY_VERSION.fullmatch(line[3:]):
+                        incomplete = True
+                    else:
+                        bundled_versions.append(line.strip())
+                elif not re.fullmatch(
+                    r"   ruby [0-9][A-Za-z0-9.]*(?:p[0-9]+)?(?: \([A-Za-z0-9 ._-]+\))?", line
+                ):
+                    incomplete = True
+        else:
+            incomplete = True
+    incomplete |= len({name for name, _ in refs}) != len(refs)
+    incomplete |= len(checksums) != len(set(checksums))
+    incomplete |= len(bundled_versions) > 1
+    incomplete |= any(
+        (name, version) not in seen_identities
+        and not (name == "bundler" and version in bundled_versions)
+        for name, version in checksums
+    )
+    versions: dict[str, set[str]] = {}
+    for name, version, _, _ in specs:
+        if _RUBY_VERSION.fullmatch(version):
+            versions.setdefault(name, set()).add(version)
+    incomplete |= any(len(values) > 1 for values in versions.values())
+    names = {name for name, _, _, _ in specs}
+    nonregistry = {name for name, _, kind, _ in specs if kind in {"git", "directory"}}
+    incomplete |= "DEPENDENCIES" not in seen_metadata or "PLATFORMS" not in seen_metadata
+    incomplete |= any(
+        name not in names or (pinned and name not in nonregistry) for name, pinned in refs
+    )
+    incomplete |= any(
+        reference not in names for _, _, _, dependencies in specs for reference in dependencies
+    )
+    # Conflicting origins cannot safely establish public registry identity.
+    origins: dict[str, set[str]] = {}
+    for name, _, kind, _ in specs:
+        origins.setdefault(name, set()).add(kind)
+    return [
+        Dependency(
+            name,
+            version,
+            "RubyGems",
+            path,
+            kind
+            if len(origins[name]) == 1 and not (incomplete and kind == "registry-rubygems")
+            else "unknown",
+        )
+        for name, version, kind, _ in specs
+    ], incomplete
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
     if path.name in {"requirements.txt", "requirements-lock.txt"}:
         return _parse_requirements(text, relative, limit)
+    if path.name == "Gemfile.lock":
+        return _parse_gemfile_lock(text, relative, limit)
     if path.name == "yarn.lock":
         return _parse_yarn_lock(text, relative, limit)
     if path.name == "pnpm-lock.yaml":
@@ -810,6 +1021,7 @@ def _is_safe_osv_query(dependency: Dependency) -> bool:
         "npm": "registry-npm",
         "crates.io": "registry-cratesio",
         "Go": None,
+        "RubyGems": "registry-rubygems",
     }
     return (
         dependency.ecosystem in public_sources
@@ -868,6 +1080,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "uv.lock",
         "Cargo.lock",
         "go.sum",
+        "Gemfile.lock",
     }
     dependencies: list[Dependency] = []
     errors: list[str] = []
@@ -946,6 +1159,12 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                         f"{relative}: non-exact or unsupported requirements were not inventoried"
                     )
                     incomplete = True
+                if truncated and name == "Gemfile.lock":
+                    errors.append(
+                        f"{relative}: unsupported, malformed, unresolved, or bounded Bundler inventory"
+                    )
+                    incomplete = True
+                    continue
                 if truncated:
                     errors.append("dependency count reached configured limit")
                     incomplete = True
