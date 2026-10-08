@@ -915,6 +915,136 @@ def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependen
     ], incomplete
 
 
+_NUGET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
+_NUGET_VERSION = re.compile(
+    r"^[0-9]+(?:\.[0-9]+){0,3}(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?"
+    r"(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?$"
+)
+_NUGET_TARGET = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9.,= _+-]{0,255}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
+)
+_NUGET_LOCK_NAME = re.compile(r"^packages\.[A-Za-z0-9_.-]{1,128}\.lock\.json$")
+
+
+def _is_nuget_lock_name(name: str) -> bool:
+    return name == "packages.lock.json" or bool(_NUGET_LOCK_NAME.fullmatch(name))
+
+
+def _parse_nuget_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    """Inventory v1/v2 pins without claiming a registry or evaluating MSBuild."""
+    data = json.loads(text, object_pairs_hook=_strict_json_object)
+    if not isinstance(data, dict) or type(data.get("version")) is not int:
+        return [], True
+    if data["version"] not in {1, 2}:
+        return [], True
+    targets = data.get("dependencies")
+    if not isinstance(targets, dict):
+        return [], True
+    incomplete = bool(set(data) - {"version", "dependencies"})
+    records: list[Dependency] = []
+    seen: set[tuple[str, str]] = set()
+    graphs: dict[str, dict[str, Any]] = {}
+    entries = 0
+    for target_index, (target, graph) in enumerate(targets.items()):
+        if target_index >= MAX_LOCKFILES:
+            return records, True
+        if not _NUGET_TARGET.fullmatch(target) or not isinstance(graph, dict):
+            incomplete = True
+            continue
+        normalized: dict[str, Any] = {}
+        for name, item in graph.items():
+            entries += 1
+            if entries > MAX_DEPENDENCIES:
+                return records, True
+            if (
+                not _NUGET_NAME.fullmatch(name)
+                or _SENSITIVE_NAME.match(name)
+                or name.lower() in normalized
+            ):
+                incomplete = True
+                continue
+            normalized[name.lower()] = item
+            if not isinstance(item, dict):
+                incomplete = True
+                continue
+            kind = item.get("type")
+            if not isinstance(kind, str) or kind not in {
+                "Direct",
+                "Transitive",
+                "CentralTransitive",
+                "Project",
+            }:
+                incomplete = True
+                continue
+            if set(item) - {"type", "requested", "resolved", "contentHash", "dependencies"}:
+                incomplete = True
+            for field in ("requested", "contentHash"):
+                if field in item and (
+                    not isinstance(item[field], str)
+                    or not item[field]
+                    or len(item[field]) > 512
+                    or any(ord(char) < 32 for char in item[field])
+                ):
+                    incomplete = True
+            version = item.get("resolved")
+            if kind == "Project":
+                if "resolved" in item and (
+                    not isinstance(version, str)
+                    or len(version) > 128
+                    or not _NUGET_VERSION.fullmatch(version)
+                ):
+                    incomplete = True
+                continue
+            if (
+                not isinstance(version, str)
+                or len(version) > 128
+                or not _NUGET_VERSION.fullmatch(version)
+                or _SENSITIVE_VERSION_TOKEN.search(version)
+            ):
+                incomplete = True
+                continue
+            identity = (name.lower(), version)
+            if identity not in seen:
+                if len(records) >= limit:
+                    return records, True
+                seen.add(identity)
+                records.append(Dependency(name, version, "NuGet", path, "unknown"))
+        graphs[target] = normalized
+    references = 0
+    for target, graph in graphs.items():
+        # RID graphs contain differences, so inherit only this exact base TFM.
+        available = dict(graphs.get(target.split("/", 1)[0], {}))
+        available.update(graph)
+        if "/" in target and target.split("/", 1)[0] not in graphs:
+            incomplete = True
+        for item in graph.values():
+            if not isinstance(item, dict):
+                continue
+            children = item.get("dependencies", {})
+            if not isinstance(children, dict):
+                incomplete = True
+                continue
+            names: set[str] = set()
+            for name, constraint in children.items():
+                references += 1
+                if references > MAX_DEPENDENCIES * 10:
+                    return records, True
+                normalized_name = name.lower()
+                if (
+                    not _NUGET_NAME.fullmatch(name)
+                    or normalized_name in names
+                    or normalized_name not in available
+                    or not isinstance(available.get(normalized_name), dict)
+                    or not isinstance(constraint, str)
+                    or not constraint
+                    or len(constraint) > 512
+                    or any(ord(char) < 32 for char in constraint)
+                ):
+                    incomplete = True
+                names.add(normalized_name)
+    return records, incomplete
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
@@ -922,6 +1052,8 @@ def _parse_lockfile(
         return _parse_requirements(text, relative, limit)
     if path.name == "Gemfile.lock":
         return _parse_gemfile_lock(text, relative, limit)
+    if _is_nuget_lock_name(path.name):
+        return _parse_nuget_lock(text, relative, limit)
     if path.name == "yarn.lock":
         return _parse_yarn_lock(text, relative, limit)
     if path.name == "pnpm-lock.yaml":
@@ -1130,13 +1262,40 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                     break
         if limit_reached:
             break
+        for declaration in sorted(files):
+            if Path(declaration).suffix not in {".csproj", ".fsproj", ".vbproj"}:
+                continue
+            declaration_path = Path(current) / declaration
+            if declaration_path.is_symlink():
+                continue
+            companions = {
+                "packages.lock.json",
+                f"packages.{Path(declaration).stem.replace(' ', '_')}.lock.json",
+            }
+            if not any(
+                companion in files
+                and _is_nuget_lock_name(companion)
+                and not (Path(current) / companion).is_symlink()
+                for companion in companions
+            ):
+                relative_declaration = declaration_path.relative_to(base).as_posix()
+                errors.append(
+                    f"{relative_declaration}: no supported companion lockfile; dependency coverage unknown"
+                )
+                incomplete = True
+                if len(errors) >= MAX_LOCKFILES:
+                    errors.append("uncovered manifest count reached configured limit")
+                    limit_reached = True
+                    break
+        if limit_reached:
+            break
         for name in sorted(files):
             if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
                 errors.append("scan time limit reached")
                 incomplete = True
                 break
             path = Path(current) / name
-            if name not in supported or path.is_symlink():
+            if (name not in supported and not _is_nuget_lock_name(name)) or path.is_symlink():
                 continue
             if manifests >= MAX_LOCKFILES:
                 errors.append("lockfile count reached configured limit")
@@ -1162,6 +1321,12 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 if truncated and name == "Gemfile.lock":
                     errors.append(
                         f"{relative}: unsupported, malformed, unresolved, or bounded Bundler inventory"
+                    )
+                    incomplete = True
+                    continue
+                if truncated and _is_nuget_lock_name(name):
+                    errors.append(
+                        f"{relative}: unsupported, malformed, unresolved, or bounded NuGet inventory"
                     )
                     incomplete = True
                     continue

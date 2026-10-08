@@ -2,7 +2,7 @@
 
 Herramienta defensiva y de solo lectura para inventariar hallazgos de seguridad de GitHub y analizar archivos de repositorios localmente. No modifica repositorios, no cierra alertas, no rota secretos y no hace merge automático.
 
-Ver [instalación y uso](docs/getting-started.md), [validación en repositorios reales](docs/validation-2026-10-06.md) y [cambios de v0.2.0](CHANGELOG.md).
+Ver [instalación y uso](docs/getting-started.md), [validación en repositorios reales](docs/validation-2026-10-06.md) y [cambios de v0.3.0](CHANGELOG.md).
 
 ## Uso local
 
@@ -44,6 +44,14 @@ Sin credenciales, la integración remota usa el proveedor offline vacío. La API
 OSV permanece desactivado por defecto. Con `--query-osv`, solo se envían nombres y versiones exactas de paquetes con una fuente HTTPS única en la raíz de `rubygems.org`. Orígenes privados, múltiples o ambiguos, Git, rutas y versiones con sufijo de plataforma quedan fuera de las consultas. Un nombre puede ser privado incluso cuando el lockfile declara un registro público. No se consultan URLs ni se verifica la validez de credenciales.
 
 Las secciones no soportadas, registros inválidos y referencias faltantes dejan la cobertura incompleta y deshabilitan consultas OSV para los paquetes de ese lockfile. `CHECKSUMS` se trata como metadata; no se descargan paquetes ni se comprueba su integridad. Las variantes de plataforma se conservan sin afirmar qué variante instala cada entorno. `CONTENT ADDRESSES` y fuentes de plugins todavía no están soportadas.
+
+## Lockfiles de NuGet
+
+Inventaría `packages.lock.json` y `packages.<nombre_del_proyecto>.lock.json` en formatos 1 y 2. Reconoce proyectos `.csproj`, `.fsproj` y `.vbproj`; busca compañeros en la misma carpeta y sustituye espacios por guiones bajos en el nombre del lockfile. El formato 3 y los proyectos sin un compañero compatible dejan la cobertura incompleta. Las ubicaciones personalizadas de `NuGetLockFilePath` no se infieren.
+
+Conserva paquetes Direct, Transitive y CentralTransitive; los nodos Project solo participan en la validación de referencias. Los overlays RID heredan únicamente su framework base y las referencias se comparan sin distinguir mayúsculas. No ejecuta .NET, MSBuild ni configuración de feeds; no verifica restricciones de versiones, `contentHash` ni el grafo instalado actualmente.
+
+El lockfile no confirma el registro de origen. Todos los paquetes NuGet permanecen con origen desconocido y fuera de OSV, incluso con `--query-osv`; en ese caso la consulta queda incompleta. JSON duplicado, entradas inválidas, referencias faltantes y límites alcanzados también dejan el inventario incompleto.
 
 ## Proveedor GitHub de solo lectura
 
