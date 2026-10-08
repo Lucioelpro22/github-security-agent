@@ -1,6 +1,8 @@
 name: Action smoke test
 
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - action.yml
@@ -38,3 +40,49 @@ jobs:
           query-osv: "false"
           fail-on-incomplete: "false"
           artifact-name: github-security-agent-smoke
+
+      - name: Validate audit exit statuses
+        env:
+          SCAN_STATUS: ${{ steps.security-audit.outputs.scan-status }}
+          DEPENDENCY_STATUS: ${{ steps.security-audit.outputs.dependency-status }}
+        run: |
+          set -euo pipefail
+          [[ "$SCAN_STATUS" == 0 || "$SCAN_STATUS" == 2 ]]
+          [[ "$DEPENDENCY_STATUS" == 0 || "$DEPENDENCY_STATUS" == 2 ]]
+
+      - name: Download uploaded reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: github-security-agent-smoke
+          path: ${{ runner.temp }}/github-security-agent-smoke-validation
+
+      - name: Validate uploaded report structure
+        env:
+          REPORT_DIR: ${{ runner.temp }}/github-security-agent-smoke-validation
+          SCAN_STATUS: ${{ steps.security-audit.outputs.scan-status }}
+          DEPENDENCY_STATUS: ${{ steps.security-audit.outputs.dependency-status }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['REPORT_DIR'])
+          markdown = (root / 'repository-scan.md').read_text()
+          scan_status = 'complete' if os.environ['SCAN_STATUS'] == '0' else 'incomplete'
+          assert markdown.startswith('# Local repository security scan\n')
+          assert f'- Status: **{scan_status}**' in markdown
+          assert '- Files scanned: **' in markdown
+          assert '- Findings: **' in markdown
+          report = json.loads((root / 'dependency-audit.json').read_text())
+          expected = 'complete' if os.environ['DEPENDENCY_STATUS'] == '0' else 'incomplete'
+          assert isinstance(report, dict)
+          assert report['schema_version'] == 1
+          assert report['report_type'] == 'dependency_audit'
+          assert report['status'] == expected
+          assert report['advisory_lookup'] == 'not_requested'
+          assert isinstance(report['manifests_scanned'], int)
+          assert isinstance(report['dependencies'], list)
+          assert isinstance(report['advisories'], list)
+          assert isinstance(report['errors'], list)
+          PY

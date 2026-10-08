@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-08
+
+- Corrige la Action para instalar PyYAML desde un wheel de PyPI antes de auditar y verifica los informes realmente subidos en el smoke test.
+
+- Agrega inventario offline de NuGet `packages.lock.json` v1/v2, con referencias por framework y overlays RID; el origen permanece desconocido y ningún paquete NuGet se envía a OSV.
+- Automatiza wheel, sdist, SHA256SUMS y procedencia de releases, condicionados a los checks exitosos del SHA exacto en main.
 
 - Agrega inventario offline de `Gemfile.lock` para RubyGems, separando registros, Git y rutas locales; las consultas OSV siguen siendo optativas y restringidas por origen.
 

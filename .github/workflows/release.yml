@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build signed release evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require successful verification workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for workflow in ci.yml codeql.yml zizmor.yml action-smoke.yml; do
+            count="$(gh run list --workflow "$workflow" --commit "$RELEASE_SHA" --branch main --event push --limit 50 --json conclusion,status --jq '[.[] | select(.status == "completed" and .conclusion == "success")] | length')"
+            if [[ "$count" -lt 1 ]]; then
+              echo "No successful $workflow run found for $RELEASE_SHA" >&2
+              exit 1
+            fi
+          done
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine
+      - name: Verify tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import ast
+          import os
+          import tomllib
+          from pathlib import Path
+
+          package_version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          tree = ast.parse(Path('src/github_security_agent/__init__.py').read_text())
+          versions = [
+              ast.literal_eval(node.value)
+              for node in tree.body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == '__version__'
+                      for target in node.targets)
+          ]
+          if versions != [package_version]:
+              raise SystemExit('package and module versions do not match')
+          expected = f"v{package_version}"
+          actual = os.environ['RELEASE_TAG']
+          if actual != expected:
+              raise SystemExit(f"tag {actual!r} does not match package version {expected!r}")
+          PY
+      - name: Build distributions
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          rm -rf dist
+          python -m build --sdist --wheel
+          python -m twine check dist/*
+          sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/*
+          else
+            gh release create "$RELEASE_TAG" dist/* --generate-notes --verify-tag
+          fi
