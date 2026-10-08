@@ -58,6 +58,8 @@ _MANIFEST_COMPANIONS = {
     "go.mod": {"go.sum"},
     "Gemfile": {"Gemfile.lock"},
     "pom.xml": set(),
+    "build.gradle": {"gradle.lockfile"},
+    "build.gradle.kts": {"gradle.lockfile"},
 }
 
 
@@ -1067,9 +1069,98 @@ def _parse_nuget_lock(text: str, path: str, limit: int) -> tuple[list[Dependency
     return records, incomplete
 
 
+_GRADLE_NAMES = {"gradle.lockfile", "buildscript-gradle.lockfile"}
+_GRADLE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$")
+_GRADLE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_GRADLE_CONFIGURATION = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,255}$")
+
+
+def _is_gradle_lock_path(path: Path) -> bool:
+    return path.name in _GRADLE_NAMES or (
+        path.parent.name == "dependency-locks"
+        and path.parent.parent.name == "gradle"
+        and path.name.endswith(".lockfile")
+        and bool(_GRADLE_CONFIGURATION.fullmatch(path.name.removesuffix(".lockfile")))
+    )
+
+
+def _parse_gradle_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    """Read recorded pins, never execute Gradle or infer a repository."""
+    legacy = Path(path).name not in _GRADLE_NAMES
+    records: list[Dependency] = []
+    incomplete = False
+    seen: set[str] = set()
+    occupied: dict[tuple[str, str], str] = {}
+    populated: set[str] = set()
+    empty: set[str] = set()
+    empty_seen = False
+    entries = edges = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        entries += 1
+        if entries > MAX_DEPENDENCIES + 1:
+            return records, True
+        if legacy:
+            coordinate = line
+            configurations = [Path(path).name.removesuffix(".lockfile")]
+        else:
+            if line.count("=") != 1:
+                incomplete = True
+                continue
+            coordinate, value = line.split("=", 1)
+            configurations = [item.strip() for item in value.split(",")] if value else []
+        edges += len(configurations)
+        if edges > MAX_DEPENDENCIES * 10:
+            return records, True
+        if len(configurations) != len(set(configurations)) or any(
+            not _GRADLE_CONFIGURATION.fullmatch(item) for item in configurations
+        ):
+            incomplete = True
+            continue
+        if not legacy and coordinate == "empty":
+            if empty_seen:
+                incomplete = True
+            empty_seen = True
+            empty.update(configurations)
+            continue
+        parts = coordinate.split(":")
+        if (
+            len(parts) != 3
+            or not configurations
+            or not all(_GRADLE_COMPONENT.fullmatch(part) for part in parts[:2])
+            or not _GRADLE_VERSION.fullmatch(parts[2])
+            or parts[2].lower().startswith("latest.")
+            or any(_SENSITIVE_NAME.match(part) for part in parts)
+            or _SENSITIVE_VERSION_TOKEN.search(parts[2])
+        ):
+            incomplete = True
+            continue
+        if coordinate in seen:
+            incomplete = True
+            continue
+        seen.add(coordinate)
+        name = ":".join(parts[:2])
+        for configuration in configurations:
+            identity = (name, configuration)
+            if identity in occupied and occupied[identity] != parts[2]:
+                incomplete = True
+            occupied[identity] = parts[2]
+            populated.add(configuration)
+        if len(records) >= limit:
+            return records, True
+        records.append(Dependency(name, parts[2], "Maven", path, "unknown"))
+    if not legacy and (not empty_seen or empty & populated):
+        incomplete = True
+    return records, incomplete
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
+    if _is_gradle_lock_path(path):
+        return _parse_gradle_lock(text, relative, limit)
     if path.name in {"requirements.txt", "requirements-lock.txt"}:
         return _parse_requirements(text, relative, limit)
     if path.name == "Gemfile.lock":
@@ -1311,13 +1402,27 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                     break
         if limit_reached:
             break
+        current_path = Path(current)
+        if current_path.name == "dependency-locks" and current_path.parent.name == "gradle":
+            project = current_path.parent.parent
+            if any((project / modern).exists() for modern in _GRADLE_NAMES) and any(
+                _is_gradle_lock_path(current_path / name) for name in files
+            ):
+                errors.append(
+                    f"{current_path.relative_to(base).as_posix()}: mixed modern and legacy Gradle lock state; active precedence not inferred"
+                )
+                incomplete = True
         for name in sorted(files):
             if time.monotonic() - started_at >= MAX_SCAN_SECONDS:
                 errors.append("scan time limit reached")
                 incomplete = True
                 break
             path = Path(current) / name
-            if (name not in supported and not _is_nuget_lock_name(name)) or path.is_symlink():
+            if (
+                name not in supported
+                and not _is_nuget_lock_name(name)
+                and not _is_gradle_lock_path(path)
+            ) or path.is_symlink():
                 continue
             if manifests >= MAX_LOCKFILES:
                 errors.append("lockfile count reached configured limit")
@@ -1343,6 +1448,12 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                 if truncated and name == "Gemfile.lock":
                     errors.append(
                         f"{relative}: unsupported, malformed, unresolved, or bounded Bundler inventory"
+                    )
+                    incomplete = True
+                    continue
+                if truncated and _is_gradle_lock_path(path):
+                    errors.append(
+                        f"{relative}: unsupported, malformed, unresolved, or bounded Gradle inventory"
                     )
                     incomplete = True
                     continue
