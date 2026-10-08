@@ -37,6 +37,14 @@ El visor admite contratos JSON v1 para los tres tipos. Procesa archivos de hasta
 
 Sin credenciales, la integración remota usa el proveedor offline vacío. La API real es optativa y de solo lectura; el token se obtiene únicamente de una variable de entorno.
 
+## Lockfiles de Ruby
+
+`Gemfile.lock` se interpreta como datos: no se evalúan `Gemfile`, gemspecs, scripts ni plugins de Bundler. El inventario distingue paquetes de registros (`GEM`), Git (`GIT`) y rutas locales (`PATH`); no demuestra qué paquetes están instalados ni resuelve restricciones de versiones. Comprueba la presencia de referencias directas y transitivas dentro del lockfile.
+
+OSV permanece desactivado por defecto. Con `--query-osv`, solo se envían nombres y versiones exactas de paquetes con una fuente HTTPS única en la raíz de `rubygems.org`. Orígenes privados, múltiples o ambiguos, Git, rutas y versiones con sufijo de plataforma quedan fuera de las consultas. Un nombre puede ser privado incluso cuando el lockfile declara un registro público. No se consultan URLs ni se verifica la validez de credenciales.
+
+Las secciones no soportadas, registros inválidos y referencias faltantes dejan la cobertura incompleta y deshabilitan consultas OSV para los paquetes de ese lockfile. `CHECKSUMS` se trata como metadata; no se descargan paquetes ni se comprueba su integridad. Las variantes de plataforma se conservan sin afirmar qué variante instala cada entorno. `CONTENT ADDRESSES` y fuentes de plugins todavía no están soportadas.
+
 ## Proveedor GitHub de solo lectura
 
 ```bash
