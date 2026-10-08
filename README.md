@@ -2,7 +2,7 @@
 
 Herramienta defensiva y de solo lectura para inventariar hallazgos de seguridad de GitHub y analizar archivos de repositorios localmente. No modifica repositorios, no cierra alertas, no rota secretos y no hace merge automático.
 
-Ver [instalación y uso](docs/getting-started.md), [validación en repositorios reales](docs/validation-2026-10-06.md) y [cambios de v0.3.1](CHANGELOG.md).
+Ver [instalación y uso](docs/getting-started.md), [validación en repositorios reales](docs/validation-2026-10-06.md) y [cambios de v0.3.2](CHANGELOG.md).
 
 ## Uso local
 
