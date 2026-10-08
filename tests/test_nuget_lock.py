@@ -119,7 +119,7 @@ def test_nuget_case_colliding_package_ids_fail_closed(tmp_path):
     assert audit.audit_dependencies(tmp_path).status == "incomplete"
 
 
-@pytest.mark.parametrize("version", [True, False, 0, 3, "1", None, 1.0])
+@pytest.mark.parametrize("version", [True, False, 0, 4, "1", None, 1.0])
 def test_nuget_unsupported_format_versions(tmp_path, version):
     write_lock(tmp_path, {"Example": package()}, version=version)
     assert audit.audit_dependencies(tmp_path).status == "incomplete"
@@ -285,3 +285,227 @@ def test_nuget_case_colliding_reference_names_are_incomplete(tmp_path):
         },
     )
     assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+# NuGet.ProjectModel's V3 writer uses root aliases with explicit framework metadata.
+def write_v3(tmp_path, targets):
+    (tmp_path / "packages.lock.json").write_text(
+        json.dumps({"version": 3, **targets}), encoding="utf-8"
+    )
+
+
+def target_v3(packages=None, framework=".NETCoreApp,Version=v8.0"):
+    return {"framework": framework, "dependencies": packages or {}}
+
+
+def test_nuget_v3_distinct_aliases_can_share_framework(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "desktop": target_v3({"Example": package(version="1.2.3")}),
+            "service": target_v3({"Example": package(version="2.0.0")}),
+        },
+    )
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert {(d.name, d.version) for d in report.dependencies} == {
+        ("Example", "1.2.3"),
+        ("Example", "2.0.0"),
+    }
+
+
+def test_nuget_v3_runtime_overlay_inherits_own_alias_case_insensitive_packages(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "service/linux-x64": target_v3({"Runtime": package(dependencies={"BASE": "1.2.3"})}),
+            "service": target_v3({"Base": package("Transitive")}),
+        },
+    )
+    assert audit.audit_dependencies(tmp_path).status == "complete"
+
+
+@pytest.mark.parametrize(
+    "other_framework", [".NETCoreApp,Version=v8.0", ".NETCoreApp,Version=v9.0"]
+)
+def test_nuget_v3_other_alias_cannot_satisfy_reference(tmp_path, other_framework):
+    write_v3(
+        tmp_path,
+        {
+            "service": target_v3({}),
+            "service/linux-x64": target_v3({"Runtime": package(dependencies={"Base": "1.2.3"})}),
+            "desktop": target_v3({"Base": package("Transitive")}, other_framework),
+        },
+    )
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+def test_nuget_v3_runtime_requires_alias_base(tmp_path):
+    write_v3(tmp_path, {"service/linux-x64": target_v3({"Example": package()})})
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+def test_nuget_v3_runtime_framework_must_match_alias_base(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "service": target_v3({}),
+            "service/linux-x64": target_v3({"Example": package()}, ".NETCoreApp,Version=v9.0"),
+        },
+    )
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        None,
+        [],
+        "canary-password",
+        {},
+        {"framework": "net8.0"},
+        {"dependencies": {}},
+        {"framework": "", "dependencies": {}},
+        {"framework": None, "dependencies": {}},
+        {"framework": [], "dependencies": {}},
+        {"framework": "https://canary-password@example.test", "dependencies": {}},
+        {"framework": "net8.0\ncanary-password", "dependencies": {}},
+        {"framework": "net8.0", "dependencies": []},
+        {"framework": "net8.0", "dependencies": {}, "source": "canary-password"},
+    ],
+)
+def test_nuget_v3_invalid_target_metadata_is_incomplete_without_disclosure(tmp_path, target):
+    write_v3(tmp_path, {"service": target})
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert "canary-password" not in audit.report_json(report) + audit.report_markdown(report)
+
+
+@pytest.mark.parametrize(
+    "alias",
+    ["", "service/linux/x64", "service/", "/linux-x64", "https://canary-password@example.test"],
+)
+def test_nuget_v3_invalid_target_aliases_are_incomplete(tmp_path, alias):
+    write_v3(tmp_path, {alias: target_v3({"Example": package()})})
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert "canary-password" not in audit.report_json(report)
+
+
+def test_nuget_v3_case_colliding_package_ids_fail_closed(tmp_path):
+    write_v3(tmp_path, {"service": target_v3({"Example": package(), "example": package()})})
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"version":3,"service":{"framework":"net8.0","dependencies":{}},"service":{"framework":"net9.0","dependencies":{}}}',
+        '{"version":3,"service":{"framework":"net8.0","framework":"net9.0","dependencies":{}}}',
+        '{"version":3,"service":{"framework":"net8.0","dependencies":{"Example":{"type":"Transitive","resolved":"1.2.3"},"Example":{"type":"Transitive","resolved":"2.0.0"}}}}',
+    ],
+)
+def test_nuget_v3_duplicate_json_keys_fail_closed(tmp_path, body):
+    (tmp_path / "packages.lock.json").write_text(body)
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+def test_nuget_v3_v2_shaped_root_cannot_be_silently_empty_complete(tmp_path):
+    write_lock(tmp_path, {"Private.Package": package()}, version=3)
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+@pytest.mark.parametrize("limit,status,count", [(1, "incomplete", 1), (2, "complete", 2)])
+def test_nuget_v3_inventory_budget_exact_boundary(tmp_path, monkeypatch, limit, status, count):
+    write_v3(
+        tmp_path, {"service": target_v3({"Example": package(), "Other": package("Transitive")})}
+    )
+    monkeypatch.setattr(audit, "MAX_DEPENDENCIES", limit)
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == status
+    assert len(report.dependencies) == count
+
+
+@pytest.mark.parametrize("count,status", [(100, "complete"), (101, "incomplete")])
+def test_nuget_v3_target_budget_exact_boundary(tmp_path, count, status):
+    write_v3(tmp_path, {f"service{i}": target_v3() for i in range(count)})
+    assert audit.audit_dependencies(tmp_path).status == status
+
+
+@pytest.mark.parametrize("query_osv", [False, True])
+def test_nuget_v3_never_discloses_identities_to_osv(tmp_path, monkeypatch, query_osv):
+    record = package()
+    record["source"] = "https://api.nuget.org/v3/index.json"
+    write_v3(tmp_path, {"service": target_v3({"Private.Package": record})})
+    monkeypatch.setattr(audit, "_post_osv_batch", lambda _: pytest.fail("NuGet V3 identity sent"))
+    report = audit.audit_dependencies(tmp_path, query_osv=query_osv)
+    assert len(report.dependencies) == 1
+    assert report.advisory_lookup == ("incomplete" if query_osv else "not_requested")
+    assert record["source"] not in audit.report_json(report) + audit.report_markdown(report)
+
+
+def test_nuget_v3_project_records_validate_edges_without_package_inventory(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "service": target_v3(
+                {
+                    "Project": {"type": "Project", "dependencies": {"Package": "1.2.3"}},
+                    "Package": package("CentralTransitive"),
+                }
+            )
+        },
+    )
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert [d.name for d in report.dependencies] == ["Package"]
+
+
+def test_nuget_v3_alias_names_remain_distinct_by_case(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "service": target_v3({"Example": package(dependencies={"Other": "1.2.3"})}),
+            "Service": target_v3({"Other": package("Transitive")}),
+        },
+    )
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+def test_nuget_v3_effective_framework_name_cannot_supply_runtime_alias_base(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "service/linux-x64": target_v3({"Example": package(dependencies={"Other": "1.2.3"})}),
+            "net8.0": target_v3({"Other": package("Transitive")}),
+        },
+    )
+    assert audit.audit_dependencies(tmp_path).status == "incomplete"
+
+
+def test_nuget_v3_duplicate_identity_across_aliases_is_inventory_deduplicated(tmp_path):
+    write_v3(
+        tmp_path,
+        {
+            "service": target_v3({"Example": package()}),
+            "desktop": target_v3({"EXAMPLE": package()}),
+        },
+    )
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert len(report.dependencies) == 1
+
+
+def test_nuget_v3_malformed_target_after_inventory_cap_still_incomplete(tmp_path, monkeypatch):
+    write_v3(tmp_path, {"service": target_v3({"Example": package()}), "desktop": None})
+    monkeypatch.setattr(audit, "MAX_DEPENDENCIES", 1)
+    report = audit.audit_dependencies(tmp_path)
+    assert len(report.dependencies) == 1
+    assert report.status == "incomplete"
+
+
+def test_nuget_v3_invalid_package_does_not_hide_valid_peer(tmp_path):
+    write_v3(tmp_path, {"service": target_v3({"Bad": {"type": []}, "Valid": package()})})
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert [d.name for d in report.dependencies] == ["Valid"]

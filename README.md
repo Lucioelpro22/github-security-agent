@@ -47,9 +47,9 @@ Las secciones no soportadas, registros inválidos y referencias faltantes dejan 
 
 ## Lockfiles de NuGet
 
-Inventaría `packages.lock.json` y `packages.<nombre_del_proyecto>.lock.json` en formatos 1 y 2. Reconoce proyectos `.csproj`, `.fsproj` y `.vbproj`; busca compañeros en la misma carpeta y sustituye espacios por guiones bajos en el nombre del lockfile. El formato 3 y los proyectos sin un compañero compatible dejan la cobertura incompleta. Las ubicaciones personalizadas de `NuGetLockFilePath` no se infieren.
+Inventaría `packages.lock.json` y `packages.<nombre_del_proyecto>.lock.json` en formatos 1, 2 y 3. Reconoce proyectos `.csproj`, `.fsproj` y `.vbproj`; busca compañeros en la misma carpeta y sustituye espacios por guiones bajos en el nombre del lockfile. Las versiones desconocidas y los proyectos sin un compañero compatible dejan la cobertura incompleta. Las ubicaciones personalizadas de `NuGetLockFilePath` no se infieren.
 
-Conserva paquetes Direct, Transitive y CentralTransitive; los nodos Project solo participan en la validación de referencias. Los overlays RID heredan únicamente su framework base y las referencias se comparan sin distinguir mayúsculas. No ejecuta .NET, MSBuild ni configuración de feeds; no verifica restricciones de versiones, `contentHash` ni el grafo instalado actualmente.
+Conserva paquetes Direct, Transitive y CentralTransitive; los nodos Project solo participan en la validación de referencias. En v3, los targets conservan su alias y framework declarado: los overlays RID heredan únicamente el alias base correspondiente, sin combinar aliases que compartan framework. Las referencias de paquetes se comparan sin distinguir mayúsculas. No ejecuta .NET, MSBuild ni configuración de feeds; no verifica restricciones de versiones, `contentHash` ni el grafo instalado actualmente.
 
 El lockfile no confirma el registro de origen. Todos los paquetes NuGet permanecen con origen desconocido y fuera de OSV, incluso con `--query-osv`; en ese caso la consulta queda incompleta. JSON duplicado, entradas inválidas, referencias faltantes y límites alcanzados también dejan el inventario incompleto.
 

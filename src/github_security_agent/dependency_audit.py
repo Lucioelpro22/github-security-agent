@@ -923,6 +923,7 @@ _NUGET_VERSION = re.compile(
 _NUGET_TARGET = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9.,= _+-]{0,255}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
 )
+_NUGET_FRAMEWORK = re.compile(r"^\.?[A-Za-z0-9][A-Za-z0-9.,= _+-]{0,255}$")
 _NUGET_LOCK_NAME = re.compile(r"^packages\.[A-Za-z0-9_.-]{1,128}\.lock\.json$")
 
 
@@ -931,19 +932,25 @@ def _is_nuget_lock_name(name: str) -> bool:
 
 
 def _parse_nuget_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
-    """Inventory v1/v2 pins without claiming a registry or evaluating MSBuild."""
+    """Inventory v1/v2/v3 pins without claiming a registry or evaluating MSBuild."""
     data = json.loads(text, object_pairs_hook=_strict_json_object)
     if not isinstance(data, dict) or type(data.get("version")) is not int:
         return [], True
-    if data["version"] not in {1, 2}:
+    if data["version"] not in {1, 2, 3}:
         return [], True
-    targets = data.get("dependencies")
+    aliased = data["version"] == 3
+    targets = (
+        {key: value for key, value in data.items() if key != "version"}
+        if aliased
+        else data.get("dependencies")
+    )
     if not isinstance(targets, dict):
         return [], True
-    incomplete = bool(set(data) - {"version", "dependencies"})
+    incomplete = not aliased and bool(set(data) - {"version", "dependencies"})
     records: list[Dependency] = []
     seen: set[tuple[str, str]] = set()
     graphs: dict[str, dict[str, Any]] = {}
+    frameworks: dict[str, str] = {}
     entries = 0
     for target_index, (target, graph) in enumerate(targets.items()):
         if target_index >= MAX_LOCKFILES:
@@ -951,6 +958,18 @@ def _parse_nuget_lock(text: str, path: str, limit: int) -> tuple[list[Dependency
         if not _NUGET_TARGET.fullmatch(target) or not isinstance(graph, dict):
             incomplete = True
             continue
+        if aliased:
+            framework = graph.get("framework")
+            if not isinstance(framework, str) or not _NUGET_FRAMEWORK.fullmatch(framework):
+                incomplete = True
+                continue
+            frameworks[target] = framework.casefold()
+            if set(graph) - {"framework", "dependencies"}:
+                incomplete = True
+            graph = graph.get("dependencies")
+            if not isinstance(graph, dict):
+                incomplete = True
+                continue
         normalized: dict[str, Any] = {}
         for name, item in graph.items():
             entries += 1
@@ -1012,10 +1031,13 @@ def _parse_nuget_lock(text: str, path: str, limit: int) -> tuple[list[Dependency
         graphs[target] = normalized
     references = 0
     for target, graph in graphs.items():
-        # RID graphs contain differences, so inherit only this exact base TFM.
-        available = dict(graphs.get(target.split("/", 1)[0], {}))
+        # RID graphs contain differences. V3 inherits by alias, not framework:
+        # two aliases can intentionally name the same framework with different pins.
+        base = target.split("/", 1)[0]
+        matching_base = not aliased or frameworks.get(base) == frameworks.get(target)
+        available = dict(graphs.get(base, {})) if matching_base else {}
         available.update(graph)
-        if "/" in target and target.split("/", 1)[0] not in graphs:
+        if "/" in target and (base not in graphs or not matching_base):
             incomplete = True
         for item in graph.values():
             if not isinstance(item, dict):
