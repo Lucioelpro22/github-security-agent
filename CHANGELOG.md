@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Agrega inventario offline de NuGet `packages.lock.json` v3 con aliases de frameworks y overlays RID; mantiene origen desconocido y exclusión total de OSV.
+
 ## 0.3.0 — 2026-10-08
 
 - Corrige la Action para instalar PyYAML desde un wheel de PyPI antes de auditar y verifica los informes realmente subidos en el smoke test.
