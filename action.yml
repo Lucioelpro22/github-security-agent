@@ -36,7 +36,8 @@ runs:
     - name: Install reviewed runtime dependency
       shell: bash
       continue-on-error: ${{ inputs.fail-on-incomplete != 'true' }}
-      run: python -I -m pip --isolated install --only-binary=:all: --disable-pip-version-check --index-url https://pypi.org/simple PyYAML==6.0.3
+      run: |
+        python -I -m pip --isolated install --only-binary=:all: --disable-pip-version-check --index-url https://pypi.org/simple PyYAML==6.0.3
 
     - name: Run read-only audits
       id: scan
