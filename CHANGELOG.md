@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 — 2026-10-08
 
 - Agrega inventario offline de locks de Gradle modernos y antiguos por configuración, con origen desconocido y exclusión de OSV; detecta cobertura incierta, entradas inválidas y límites alcanzados.
 
