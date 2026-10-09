@@ -10,6 +10,26 @@ from github_security_agent import dependency_audit as audit
 HASH = "a" * 86 + "=="
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        ".NETStandard,Version=v2.0",
+        ".NETFramework,Version=v4.8",
+        ".NETStandard,Version=v2.0/linux-x64",
+    ],
+)
+def test_legacy_dotted_framework_target(tmp_path, target):
+    graphs = {target: {"Example.Direct": package()}}
+    if "/" in target:
+        graphs[target.split("/")[0]] = {"Example.Direct": package()}
+    write_lock(tmp_path, graphs=graphs)
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert [(d.name, d.version, d.source_kind) for d in report.dependencies] == [
+        ("Example.Direct", "1.2.3", "unknown")
+    ]
+
+
 def package(kind="Direct", version="1.2.3", dependencies=None):
     record = {"type": kind, "resolved": version, "contentHash": HASH}
     if kind in {"Direct", "CentralTransitive"}:

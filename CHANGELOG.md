@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Corrige el inventario NuGet v1/v2 de targets antiguos con punto inicial, como `.NETStandard,Version=v2.0`; documenta la validación de lockfiles reales de Ruby, Gradle y NuGet.
+
 ## 0.3.2 — 2026-10-08
 
 - Agrega inventario offline de locks de Gradle modernos y antiguos por configuración, con origen desconocido y exclusión de OSV; detecta cobertura incierta, entradas inválidas y límites alcanzados.
