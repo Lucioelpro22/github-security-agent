@@ -1,4 +1,4 @@
-# Instalación y uso — v0.3.4
+# Instalación y uso — v0.3.5
 
 Versión para uso controlado y solo lectura. Python 3.11–3.13 es la matriz de CI validada. Instalar el agente no instala dependencias de los proyectos que se analizan.
 

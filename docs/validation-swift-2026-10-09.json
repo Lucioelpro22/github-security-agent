@@ -1,0 +1,121 @@
+{
+  "audited_commit": "5603720d9899a1520ad8487fa99060e127b7de47",
+  "method": "Isolated selected lockfile copies; direct JSON identity/version comparison; OSV mocked to fail if invoked; no Swift or project code executed.",
+  "samples": [
+    {
+      "sample": "embedded-branch",
+      "schema": 3,
+      "bytes": 943,
+      "sha256": "d9b51a4e3249ba52b846e8be9e51e9094064676049ff975f03995a5943587700",
+      "declared_pins": 3,
+      "release_pins": 2,
+      "omitted_branch_or_revision_pins": 1,
+      "status": "incomplete",
+      "identity_version_pairs": [
+        [
+          "swift-argument-parser",
+          "1.5.0"
+        ],
+        [
+          "swift-syntax",
+          "600.0.1"
+        ]
+      ],
+      "optin_lookup": "incomplete",
+      "repository": "swiftlang/swift-embedded-examples",
+      "commit": "119b29f83550efb39546e2359ad8368d5e6b6fd2",
+      "path": "stm32-neopixel/Package.resolved",
+      "url": "https://github.com/swiftlang/swift-embedded-examples/blob/119b29f83550efb39546e2359ad8368d5e6b6fd2/stm32-neopixel/Package.resolved"
+    },
+    {
+      "sample": "embedded-root",
+      "schema": 3,
+      "bytes": 686,
+      "sha256": "b84a0b536b87d778b7120eb635191609dd0d98f3ecd126591c87cb4f87a50849",
+      "declared_pins": 2,
+      "release_pins": 2,
+      "omitted_branch_or_revision_pins": 0,
+      "status": "complete",
+      "identity_version_pairs": [
+        [
+          "swift-docc-plugin",
+          "1.4.3"
+        ],
+        [
+          "swift-docc-symbolkit",
+          "1.0.0"
+        ]
+      ],
+      "optin_lookup": "incomplete",
+      "repository": "swiftlang/swift-embedded-examples",
+      "commit": "119b29f83550efb39546e2359ad8368d5e6b6fd2",
+      "path": "Package.resolved",
+      "url": "https://github.com/swiftlang/swift-embedded-examples/blob/119b29f83550efb39546e2359ad8368d5e6b6fd2/Package.resolved"
+    },
+    {
+      "sample": "xcode-v2",
+      "schema": 2,
+      "bytes": 3417,
+      "sha256": "626f92f5d5100897670883367366ba36c5fcee0227663d982e946b8bde93e3a5",
+      "declared_pins": 12,
+      "release_pins": 12,
+      "omitted_branch_or_revision_pins": 0,
+      "status": "complete",
+      "identity_version_pairs": [
+        [
+          "combine-schedulers",
+          "0.9.1"
+        ],
+        [
+          "swift-argument-parser",
+          "1.2.0"
+        ],
+        [
+          "swift-benchmark",
+          "0.1.2"
+        ],
+        [
+          "swift-case-paths",
+          "0.11.0"
+        ],
+        [
+          "swift-clocks",
+          "0.2.0"
+        ],
+        [
+          "swift-collections",
+          "1.0.4"
+        ],
+        [
+          "swift-custom-dump",
+          "0.6.1"
+        ],
+        [
+          "swift-dependencies",
+          "0.1.2"
+        ],
+        [
+          "swift-docc-plugin",
+          "1.0.0"
+        ],
+        [
+          "swift-identified-collections",
+          "0.6.0"
+        ],
+        [
+          "swiftui-navigation",
+          "0.5.0"
+        ],
+        [
+          "xctest-dynamic-overlay",
+          "0.8.0"
+        ]
+      ],
+      "optin_lookup": "incomplete",
+      "repository": "pointfreeco/swift-composable-architecture",
+      "commit": "bc2db5ba8ad3a47deba5db32fa340637ba6c9a76",
+      "path": "Examples/Integration/Integration.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+      "url": "https://github.com/pointfreeco/swift-composable-architecture/blob/bc2db5ba8ad3a47deba5db32fa340637ba6c9a76/Examples/Integration/Integration.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+    }
+  ]
+}
