@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Rechaza separadores Unicode de líneas en locks Ruby y Gradle para evitar inventarios completos de registros malformados.
+- Limita a 50.000 las referencias Ruby agregadas (directas, transitivas y checksums); un exceso deja el informe incompleto y descarta los paquetes de ese lockfile.
+- Agrega regresiones para límites de referencias/configuraciones, paquetes NuGet y JSON profundamente anidado.
+
 ## 0.3.4 — 2026-10-09
 
 - Acepta metadata `RUBY VERSION` y `BUNDLED WITH` con dos o tres espacios; corrige el estado incompleto de la muestra real de Discourse sin cambiar sus 344 pins ni activar consultas de red.
