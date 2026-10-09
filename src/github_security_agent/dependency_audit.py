@@ -867,12 +867,12 @@ def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependen
                     if not re.fullmatch(r"  [A-Za-z0-9_.-]+", line):
                         incomplete = True
                 elif title == "BUNDLED WITH":
-                    if not line.startswith("   ") or not _RUBY_VERSION.fullmatch(line[3:]):
+                    if not re.fullmatch(r" {2,3}[0-9][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)*", line):
                         incomplete = True
                     else:
                         bundled_versions.append(line.strip())
                 elif not re.fullmatch(
-                    r"   ruby [0-9][A-Za-z0-9.]*(?:p[0-9]+)?(?: \([A-Za-z0-9 ._-]+\))?", line
+                    r" {2,3}ruby [0-9][A-Za-z0-9.]*(?:p[0-9]+)?(?: \([A-Za-z0-9 ._-]+\))?", line
                 ):
                     incomplete = True
         else:

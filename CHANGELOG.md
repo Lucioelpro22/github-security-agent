@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Acepta metadata `RUBY VERSION` y `BUNDLED WITH` con dos o tres espacios; corrige el estado incompleto de la muestra real de Discourse sin cambiar sus 344 pins ni activar consultas de red.
+
 ## 0.3.3 — 2026-10-09
 
 - Corrige el inventario NuGet v1/v2 de targets antiguos con punto inicial, como `.NETStandard,Version=v2.0`; documenta la validación de lockfiles reales de Ruby, Gradle y NuGet.

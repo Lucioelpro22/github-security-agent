@@ -23,6 +23,32 @@ def write_lock(tmp_path, body):
     (tmp_path / "Gemfile.lock").write_text(body, encoding="utf-8")
 
 
+@pytest.mark.parametrize("indent", ["  ", "   "])
+def test_ruby_version_metadata_indentation(tmp_path, monkeypatch, indent):
+    body = lock().replace("   2.5.23", f"{indent}4.0.11")
+    write_lock(tmp_path, body + f"\nRUBY VERSION\n{indent}ruby 3.4.7p58\n")
+    monkeypatch.setattr(audit, "_post_osv_batch", lambda _: pytest.fail("offline audit sent data"))
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "complete"
+    assert [(d.name, d.version) for d in report.dependencies] == [("rack", "3.1.0")]
+
+
+@pytest.mark.parametrize("line", [" ruby 3.4.7p58", "    ruby 3.4.7p58", "  ruby $(id)"])
+def test_invalid_ruby_version_metadata_keeps_public_source_unknown(tmp_path, line):
+    write_lock(tmp_path, lock() + f"\nRUBY VERSION\n{line}\n")
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert all(d.source_kind == "unknown" for d in report.dependencies)
+
+
+@pytest.mark.parametrize("line", [" 4.0.11", "    4.0.11", "  $(id)", "  4.0.11 trailing"])
+def test_invalid_bundler_version_metadata_stays_incomplete(tmp_path, line):
+    write_lock(tmp_path, lock().replace("   2.5.23", line))
+    report = audit.audit_dependencies(tmp_path)
+    assert report.status == "incomplete"
+    assert all(d.source_kind == "unknown" for d in report.dependencies)
+
+
 def test_ruby_local_inventory_has_companion_and_never_queries(tmp_path, monkeypatch):
     write_lock(tmp_path, lock("    rack (3.1.0)\n      logger (>= 1.0)\n    logger (1.6.1)\n"))
     monkeypatch.setattr(audit, "_post_osv_batch", lambda _: pytest.fail("default audit sent data"))
