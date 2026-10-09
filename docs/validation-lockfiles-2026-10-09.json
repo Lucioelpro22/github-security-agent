@@ -1,0 +1,93 @@
+[
+  {
+    "repo": "discourse",
+    "commit": "7ee461ff2d3d8642575cda8788efb95441967210",
+    "files": [
+      {
+        "path": "Gemfile.lock",
+        "sha256": "5d496ef71e608d592884bd73eab5742445963b136d08d1704c0325407e121348"
+      },
+      {
+        "path": "Gemfile",
+        "sha256": "f005c16bfb05e53508f88b138b47f619ebaba2f13a93eb8aed65aecc04fa0908"
+      }
+    ],
+    "status": "incomplete",
+    "count": 344,
+    "unique_expected": 344,
+    "missing": [],
+    "unexpected": [],
+    "errors": [
+      "Gemfile.lock: unsupported, malformed, unresolved, or bounded Bundler inventory"
+    ],
+    "sources": [
+      "directory",
+      "unknown"
+    ],
+    "advisory_lookup": "not_requested"
+  },
+  {
+    "repo": "pagopa",
+    "commit": "1463c9ff50a5c7c6a282e696e9642bbd1ddae870",
+    "files": [
+      {
+        "path": "gradle.lockfile",
+        "sha256": "849cc9f1123bc61459efda4ad0a75fd4ccdda9afae5bffce9d5e1de5049d208e"
+      },
+      {
+        "path": "build.gradle.kts",
+        "sha256": "5d6ca4eac6be33b5557ce2b8a95e79250529eca06e5f67ccfc79a5c1e5092d35"
+      }
+    ],
+    "status": "complete",
+    "count": 220,
+    "unique_expected": 220,
+    "missing": [],
+    "unexpected": [],
+    "errors": [],
+    "sources": [
+      "unknown"
+    ],
+    "advisory_lookup": "not_requested"
+  },
+  {
+    "repo": "jimakufin",
+    "commit": "1d5a2f679824a7988a73e4c053e9aa166f591567",
+    "files": [
+      {
+        "path": "packages.lock.json",
+        "sha256": "854540c5a06c3f08d2cb70586e631afc783704f419777dffb081a0ca18d2a3df"
+      },
+      {
+        "path": "Emby.Jimaku.csproj",
+        "sha256": "58bb8a37a0809e25243b8ba52172469add3e55a323fe62323394c67e77db56eb"
+      },
+      {
+        "path": "Jellyfin.Jimakufin/packages.lock.json",
+        "sha256": "5c90ba4429dcb017c10d35c47fc7637ed1834a0ef4a004e72ca14c3af54db661"
+      },
+      {
+        "path": "Jellyfin.Jimakufin/Jellyfin.Jimakufin.csproj",
+        "sha256": "3ca4b701b851207810cbcb53fcd7b2a1124087c319f5e9f19dd22868480bc197"
+      },
+      {
+        "path": "Tests/packages.lock.json",
+        "sha256": "eb3f8ee3dae53141cdc13381aeaa5552c5afed581d4e10251afda4867a36927f"
+      },
+      {
+        "path": "Tests/Jimaku.Tests.csproj",
+        "sha256": "14939b496aa840a03f113f98828141e2d01e0050cc05b38dd71ca9de38d5a681"
+      }
+    ],
+    "status": "complete",
+    "count": 94,
+    "unique_expected": 57,
+    "missing": [],
+    "unexpected": [],
+    "errors": [],
+    "sources": [
+      "unknown"
+    ],
+    "advisory_lookup": "not_requested"
+  }
+]

@@ -923,7 +923,7 @@ _NUGET_VERSION = re.compile(
     r"(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?$"
 )
 _NUGET_TARGET = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9.,= _+-]{0,255}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
+    r"^\.?[A-Za-z0-9][A-Za-z0-9.,= _+-]{0,255}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$"
 )
 _NUGET_FRAMEWORK = re.compile(r"^\.?[A-Za-z0-9][A-Za-z0-9.,= _+-]{0,255}$")
 _NUGET_LOCK_NAME = re.compile(r"^packages\.[A-Za-z0-9_.-]{1,128}\.lock\.json$")
