@@ -314,6 +314,21 @@ test("normalizes dependency inventories and OSV advisories without inventing sev
   assert.equal(doc.created.some((element) => ["img", "script", "a"].includes(element.tagName)), false);
 });
 
+test("renders Swift inventory as unknown origin without inventing advisories", () => {
+  const report = parseReport(JSON.stringify(dependencySample({
+    dependencies: [{ name: "swift-example", version: "1.2.3", ecosystem: "Swift", manifest: "Package.resolved", source_kind: "unknown" }],
+    advisories: [],
+    advisory_lookup: "not_requested",
+    errors: [],
+  })));
+  assert.equal(report.dependencies[0].ecosystem, "Swift");
+  assert.equal(report.findings.length, 0);
+  assert.equal(report.lookup, "not_requested");
+  const doc = fakeDocument();
+  renderReport(report, doc);
+  assert.equal(doc.getElementById("dependency-rows").children[0].children[2].textContent, "Swift");
+});
+
 test("keeps OSV lookup states distinct and preserves incomplete dependency reports", () => {
   const notQueried = parseReport(JSON.stringify(dependencySample({
     advisory_lookup: "not_requested",

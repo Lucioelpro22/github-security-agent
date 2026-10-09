@@ -8,7 +8,7 @@ const SEVERITIES = new Set(["low", "medium", "high", "critical", "unknown"]);
 const CONFIDENCES = new Set(["low", "medium", "high"]);
 const LOCAL_SEVERITIES = new Set(["low", "medium", "high"]);
 const PROVIDERS = new Set(["empty", "github"]);
-const ECOSYSTEMS = new Set(["PyPI", "npm", "crates.io"]);
+const ECOSYSTEMS = new Set(["PyPI", "npm", "crates.io", "Swift"]);
 
 function cleanText(value, fallback) {
   if (typeof value !== "string") return fallback || "";

@@ -57,6 +57,7 @@ _MANIFEST_COMPANIONS = {
     "Cargo.toml": {"Cargo.lock"},
     "go.mod": {"go.sum"},
     "Gemfile": {"Gemfile.lock"},
+    "Package.swift": {"Package.resolved"},
     "pom.xml": set(),
     "build.gradle": {"gradle.lockfile"},
     "build.gradle.kts": {"gradle.lockfile"},
@@ -1172,6 +1173,112 @@ def _parse_gradle_lock(text: str, path: str, limit: int) -> tuple[list[Dependenc
     return records, incomplete
 
 
+_SWIFT_VERSION = re.compile(
+    r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    r"(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?$"
+)
+
+
+def _parse_swift_resolved(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    """Inventory v2/v3 identities without evaluating Swift or disclosing locations."""
+    data = json.loads(text, object_pairs_hook=_strict_json_object)
+    if not isinstance(data, dict) or type(data.get("version")) is not int:
+        return [], True
+    version = data["version"]
+    if version not in {2, 3} or not isinstance(data.get("pins"), list):
+        return [], True
+    incomplete = bool(
+        set(data) - ({"version", "pins", "originHash"} if version == 3 else {"version", "pins"})
+    )
+    origin_hash = data.get("originHash")
+    if origin_hash is not None and (
+        not isinstance(origin_hash, str)
+        or len(origin_hash) > 512
+        or any(ord(char) < 32 for char in origin_hash)
+    ):
+        incomplete = True
+    records: list[Dependency] = []
+    seen: set[str] = set()
+    for index, pin in enumerate(data["pins"]):
+        if index >= MAX_DEPENDENCIES:
+            return records, True
+        if not isinstance(pin, dict):
+            incomplete = True
+            continue
+        identity = pin.get("identity")
+        kind = pin.get("kind")
+        location = pin.get("location")
+        state = pin.get("state")
+        if (
+            not isinstance(identity, str)
+            or not _SAFE_UNSCOPED_NAME.fullmatch(identity)
+            or _SENSITIVE_NAME.match(identity)
+            or identity.casefold() in seen
+            or not isinstance(kind, str)
+            or kind not in {"localSourceControl", "remoteSourceControl", "registry"}
+            or not isinstance(location, str)
+            or len(location) > 4096
+            or (kind != "registry" and not location)
+            or any(ord(char) < 32 for char in location)
+            or not isinstance(state, dict)
+        ):
+            incomplete = True
+            continue
+        seen.add(identity.casefold())
+        if set(pin) - {"identity", "kind", "location", "originalLocation", "state"}:
+            incomplete = True
+        original = pin.get("originalLocation")
+        if original is not None and (
+            not isinstance(original, str)
+            or len(original) > 4096
+            or any(ord(char) < 32 for char in original)
+        ):
+            incomplete = True
+        if set(state) - {"version", "branch", "revision"}:
+            incomplete = True
+        release = state.get("version")
+        revision = state.get("revision")
+        branch = state.get("branch")
+        if revision is not None and (
+            not isinstance(revision, str)
+            or not re.fullmatch(r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", revision)
+        ):
+            incomplete = True
+            continue
+        if branch is not None and (
+            not isinstance(branch, str)
+            or not branch
+            or len(branch) > 256
+            or any(ord(char) < 32 for char in branch)
+        ):
+            incomplete = True
+            continue
+        if release is not None:
+            if (
+                not isinstance(release, str)
+                or len(release) > 128
+                or not _SWIFT_VERSION.fullmatch(release)
+                or any(
+                    part.isdigit() and len(part) > 1 and part.startswith("0")
+                    for part in release.split("+", 1)[0].partition("-")[2].split(".")
+                )
+                or _SENSITIVE_VERSION_TOKEN.search(release)
+                or branch is not None
+                or (kind == "registry" and revision is not None)
+            ):
+                incomplete = True
+                continue
+            resolved = release
+        else:
+            # Branch/revision pins are not exact package release versions.
+            incomplete = True
+            continue
+        if len(records) >= limit:
+            return records, True
+        records.append(Dependency(identity, resolved, "Swift", path, "unknown"))
+    return records, incomplete
+
+
 def _parse_lockfile(
     path: Path, relative: str, text: str, limit: int
 ) -> tuple[list[Dependency], bool]:
@@ -1181,6 +1288,8 @@ def _parse_lockfile(
         return _parse_requirements(text, relative, limit)
     if path.name == "Gemfile.lock":
         return _parse_gemfile_lock(text, relative, limit)
+    if path.name == "Package.resolved":
+        return _parse_swift_resolved(text, relative, limit)
     if _is_nuget_lock_name(path.name):
         return _parse_nuget_lock(text, relative, limit)
     if path.name == "yarn.lock":
@@ -1342,6 +1451,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "Cargo.lock",
         "go.sum",
         "Gemfile.lock",
+        "Package.resolved",
     }
     dependencies: list[Dependency] = []
     errors: list[str] = []
@@ -1461,6 +1571,10 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                         f"{relative}: non-exact or unsupported requirements were not inventoried"
                     )
                     incomplete = True
+                if truncated and name == "Package.resolved":
+                    errors.append(f"{relative}: unsupported, malformed, or bounded Swift inventory")
+                    incomplete = True
+                    continue
                 if truncated and name == "Gemfile.lock":
                     errors.append(
                         f"{relative}: unsupported, malformed, unresolved, or bounded Bundler inventory"
