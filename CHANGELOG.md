@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.5 — 2026-10-09
 
 - Agrega inventario offline de Swift `Package.resolved` v2/v3 y visualización de informes Swift; mantiene todos los orígenes desconocidos y fuera de OSV.
 
