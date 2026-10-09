@@ -45,6 +45,10 @@ OSV permanece desactivado por defecto. Con `--query-osv`, solo se envían nombre
 
 Las secciones no soportadas, registros inválidos y referencias faltantes dejan la cobertura incompleta y deshabilitan consultas OSV para los paquetes de ese lockfile. `CHECKSUMS` se trata como metadata; no se descargan paquetes ni se comprueba su integridad. Las variantes de plataforma se conservan sin afirmar qué variante instala cada entorno. `CONTENT ADDRESSES` y fuentes de plugins todavía no están soportadas.
 
+## Lockfiles de Swift
+
+Inventaría `Package.resolved` v2/v3 como datos, sin ejecutar Swift, SwiftPM, Xcode ni `Package.swift`. Conserva identidades y versiones de release con origen desconocido; nunca consulta OSV para Swift. Los pins solo de rama/revisión, v1, claves JSON duplicadas, entradas inválidas y límites alcanzados dejan el informe incompleto. No verifica el grafo instalado, mirrors ni hashes. Ver [compatibilidad y límites](docs/swift-resolved.md).
+
 ## Lockfiles de NuGet
 
 Inventaría `packages.lock.json` y `packages.<nombre_del_proyecto>.lock.json` en formatos 1, 2 y 3. Reconoce proyectos `.csproj`, `.fsproj` y `.vbproj`; busca compañeros en la misma carpeta y sustituye espacios por guiones bajos en el nombre del lockfile. Las versiones desconocidas y los proyectos sin un compañero compatible dejan la cobertura incompleta. Las ubicaciones personalizadas de `NuGetLockFilePath` no se infieren.

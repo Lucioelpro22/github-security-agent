@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Agrega inventario offline de Swift `Package.resolved` v2/v3 y visualización de informes Swift; mantiene todos los orígenes desconocidos y fuera de OSV.
+
 - Rechaza separadores Unicode de líneas en locks Ruby y Gradle para evitar inventarios completos de registros malformados.
 - Limita a 50.000 las referencias Ruby agregadas (directas, transitivas y checksums); un exceso deja el informe incompleto y descarta los paquetes de ese lockfile.
 - Agrega regresiones para límites de referencias/configuraciones, paquetes NuGet y JSON profundamente anidado.
