@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 — 2026-10-09
 
 - Acepta metadata `RUBY VERSION` y `BUNDLED WITH` con dos o tres espacios; corrige el estado incompleto de la muestra real de Discourse sin cambiar sus 344 pins ni activar consultas de red.
 
