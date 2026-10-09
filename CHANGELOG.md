@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 — 2026-10-09
 
 - Corrige el inventario NuGet v1/v2 de targets antiguos con punto inicial, como `.NETStandard,Version=v2.0`; documenta la validación de lockfiles reales de Ruby, Gradle y NuGet.
 
