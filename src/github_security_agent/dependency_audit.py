@@ -725,6 +725,9 @@ def _ruby_requirement_valid(value: str | None) -> bool:
 
 def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     """Conservative Bundler text inventory; never evaluate Gemfiles or sources."""
+    # Unicode separators are not physical lockfile record delimiters.
+    if any(separator in text for separator in ("\x85", "\u2028", "\u2029")):
+        return [], True
     sections: list[tuple[str, list[str]]] = []
     incomplete = any(ord(char) < 32 and char not in "\n\r" for char in text)
     for line in text.splitlines():
@@ -742,6 +745,7 @@ def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependen
     bundled_versions: list[str] = []
     seen_metadata: set[str] = set()
     seen_identities: set[tuple[str, str]] = set()
+    references = 0
     registry_sections = sum(title == "GEM" for title, _ in sections)
     for title, lines in sections:
         if title in {"GEM", "GIT", "PATH"}:
@@ -802,6 +806,9 @@ def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependen
                         continue
                     pending.append((name, version, current))
                 elif line.startswith("      ") and current is not None:
+                    references += 1
+                    if references > MAX_DEPENDENCIES * 10:
+                        return [], True
                     dependency = _RUBY_REF.fullmatch(line[6:])
                     if (
                         dependency
@@ -849,12 +856,18 @@ def _parse_gemfile_lock(text: str, path: str, limit: int) -> tuple[list[Dependen
                 incomplete = True
             for line in lines:
                 if title == "DEPENDENCIES":
+                    references += 1
+                    if references > MAX_DEPENDENCIES * 10:
+                        return [], True
                     match = _RUBY_REF.fullmatch(line[2:]) if line.startswith("  ") else None
                     if match and _ruby_requirement_valid(match.group(2)):
                         refs.append((match.group(1), bool(match.group(3))))
                     else:
                         incomplete = True
                 elif title == "CHECKSUMS":
+                    references += 1
+                    if references > MAX_DEPENDENCIES * 10:
+                        return [], True
                     checksum = re.fullmatch(
                         rf"  ({_RUBY_NAME}) \(([^()\s]+)\)(?: sha256=[a-fA-F0-9]{{64}}(?:, sha256=[a-fA-F0-9]{{64}})*)?",
                         line,
@@ -1086,6 +1099,9 @@ def _is_gradle_lock_path(path: Path) -> bool:
 
 def _parse_gradle_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     """Read recorded pins, never execute Gradle or infer a repository."""
+    # Do not turn Unicode separators into additional valid records.
+    if any(separator in text for separator in ("\x85", "\u2028", "\u2029")):
+        return [], True
     legacy = Path(path).name not in _GRADLE_NAMES
     records: list[Dependency] = []
     incomplete = False
@@ -1095,7 +1111,7 @@ def _parse_gradle_lock(text: str, path: str, limit: int) -> tuple[list[Dependenc
     empty: set[str] = set()
     empty_seen = False
     entries = edges = 0
-    for raw in text.splitlines():
+    for raw in text.split("\n"):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
