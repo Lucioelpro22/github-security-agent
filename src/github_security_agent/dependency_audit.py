@@ -58,6 +58,7 @@ _MANIFEST_COMPANIONS = {
     "go.mod": {"go.sum"},
     "Gemfile": {"Gemfile.lock"},
     "Package.swift": {"Package.resolved"},
+    "pubspec.yaml": {"pubspec.lock"},
     "pom.xml": set(),
     "build.gradle": {"gradle.lockfile"},
     "build.gradle.kts": {"gradle.lockfile"},
@@ -1179,6 +1180,139 @@ _SWIFT_VERSION = re.compile(
 )
 
 
+class _StrictPubLoader(_StrictPnpmLoader):
+    """Keep scalar versions as strings, but preserve plain YAML booleans."""
+
+    yaml_implicit_resolvers: ClassVar[dict[Any, Any]] = {
+        "t": [("tag:yaml.org,2002:bool", re.compile(r"^(?:true|false)$"))],
+        "f": [("tag:yaml.org,2002:bool", re.compile(r"^(?:true|false)$"))],
+    }
+
+
+def _pub_opaque(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 4096
+        and not any(ord(char) < 32 or char in "\x7f\x85\u2028\u2029" for char in value)
+    )
+
+
+def _pub_source_kind(source: Any, description: Any, name: str) -> str | None:
+    """Validate opaque source metadata without opening or reporting its locations."""
+    if source == "hosted":
+        if isinstance(description, str):
+            return "registry-other" if description == name else None
+        if (
+            not isinstance(description, dict)
+            or set(description) - {"name", "url", "sha256"}
+            or description.get("name") != name
+            or not _pub_opaque(description.get("url"))
+        ):
+            return None
+        if "sha256" in description and (
+            not isinstance(description["sha256"], str)
+            or not re.fullmatch(r"[a-fA-F0-9]{64}", description["sha256"])
+        ):
+            return None
+        return "registry-other"
+    if source == "git":
+        if (
+            not isinstance(description, dict)
+            or set(description) - {"url", "ref", "resolved-ref", "path", "tag-pattern"}
+            or not _pub_opaque(description.get("url"))
+            or not isinstance(description.get("resolved-ref"), str)
+            or not re.fullmatch(r"[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", description["resolved-ref"])
+            or ("ref" in description and "tag-pattern" in description)
+            or any(
+                not _pub_opaque(description[key])
+                for key in ("ref", "path", "tag-pattern")
+                if key in description
+            )
+        ):
+            return None
+        return "git"
+    if source == "path":
+        if (
+            not isinstance(description, dict)
+            or set(description) != {"path", "relative"}
+            or not _pub_opaque(description.get("path"))
+            or type(description.get("relative")) is not bool
+        ):
+            return None
+        return "directory"
+    if source == "sdk" and _pub_opaque(description):
+        return "unknown"
+    return None
+
+
+def _parse_pub_lock(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
+    """Inventory exact pub lockfile versions without running Dart or Flutter."""
+    count = 0
+    started_at = time.monotonic()
+    try:
+        for event in yaml.parse(text, Loader=_StrictPubLoader):
+            count += 1
+            if count > MAX_PNPM_YAML_EVENTS or time.monotonic() - started_at > MAX_SCAN_SECONDS:
+                raise ValueError("pub YAML resource limit exceeded")
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None:
+                raise ValueError("pub YAML aliases and anchors are unsupported")
+        data = yaml.load(text, Loader=_StrictPubLoader)
+    except yaml.YAMLError as error:
+        raise ValueError("invalid pub YAML") from error
+    if not isinstance(data, dict) or not isinstance(data.get("packages"), dict):
+        return [], True
+    incomplete = bool(set(data) - {"packages", "sdks", "sdk"})
+    if "sdks" in data and (
+        not isinstance(data["sdks"], dict)
+        or any(
+            not _pub_opaque(key) or not _pub_opaque(value) for key, value in data["sdks"].items()
+        )
+    ):
+        incomplete = True
+    if "sdk" in data and not _pub_opaque(data["sdk"]):
+        incomplete = True
+    records: list[Dependency] = []
+    for index, (name, package) in enumerate(data["packages"].items()):
+        if index >= MAX_DEPENDENCIES:
+            return records, True
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[_a-z][_a-z0-9]{0,255}", name)
+            or _SENSITIVE_NAME.match(name)
+            or not isinstance(package, dict)
+        ):
+            incomplete = True
+            continue
+        if set(package) - {"version", "source", "description", "dependency"}:
+            incomplete = True
+        if "dependency" in package and (
+            not isinstance(package["dependency"], str)
+            or package["dependency"]
+            not in {"direct main", "direct dev", "direct overridden", "transitive"}
+        ):
+            incomplete = True
+            continue
+        version = package.get("version")
+        kind = _pub_source_kind(package.get("source"), package.get("description"), name)
+        if (
+            not isinstance(version, str)
+            or len(version) > 128
+            or not _SWIFT_VERSION.fullmatch(version)
+            or _SENSITIVE_VERSION_TOKEN.search(version)
+            or any(
+                part.isdigit() and len(part) > 1 and part.startswith("0")
+                for part in version.split("+", 1)[0].partition("-")[2].split(".")
+            )
+            or kind is None
+        ):
+            incomplete = True
+            continue
+        if len(records) >= limit:
+            return records, True
+        records.append(Dependency(name, version, "Dart", path, kind))
+    return records, incomplete
+
+
 def _parse_swift_resolved(text: str, path: str, limit: int) -> tuple[list[Dependency], bool]:
     """Inventory v2/v3 identities without evaluating Swift or disclosing locations."""
     data = json.loads(text, object_pairs_hook=_strict_json_object)
@@ -1290,6 +1424,8 @@ def _parse_lockfile(
         return _parse_gemfile_lock(text, relative, limit)
     if path.name == "Package.resolved":
         return _parse_swift_resolved(text, relative, limit)
+    if path.name == "pubspec.lock":
+        return _parse_pub_lock(text, relative, limit)
     if _is_nuget_lock_name(path.name):
         return _parse_nuget_lock(text, relative, limit)
     if path.name == "yarn.lock":
@@ -1452,6 +1588,7 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
         "go.sum",
         "Gemfile.lock",
         "Package.resolved",
+        "pubspec.lock",
     }
     dependencies: list[Dependency] = []
     errors: list[str] = []
@@ -1571,6 +1708,10 @@ def audit_dependencies(root: str | Path, *, query_osv: bool = False) -> Dependen
                         f"{relative}: non-exact or unsupported requirements were not inventoried"
                     )
                     incomplete = True
+                if truncated and name == "pubspec.lock":
+                    errors.append(f"{relative}: unsupported, malformed, or bounded Dart inventory")
+                    incomplete = True
+                    continue
                 if truncated and name == "Package.resolved":
                     errors.append(f"{relative}: unsupported, malformed, or bounded Swift inventory")
                     incomplete = True

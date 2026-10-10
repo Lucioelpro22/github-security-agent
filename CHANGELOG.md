@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Agrega inventario offline de Dart/Flutter `pubspec.lock`, fuentes hosted/Git/path/SDK excluidas de OSV y visualización de informes Dart.
+
 ## 0.3.5 — 2026-10-09
 
 - Agrega inventario offline de Swift `Package.resolved` v2/v3 y visualización de informes Swift; mantiene todos los orígenes desconocidos y fuera de OSV.
