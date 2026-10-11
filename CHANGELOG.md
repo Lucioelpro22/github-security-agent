@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.6 — 2026-10-10
 
 - Agrega inventario offline de Dart/Flutter `pubspec.lock`, fuentes hosted/Git/path/SDK excluidas de OSV y visualización de informes Dart.
 
