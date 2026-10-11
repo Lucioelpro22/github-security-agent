@@ -17,7 +17,7 @@ and build metadata. Nested peer suffixes are preserved and bounded.
 Every full snapshot locator is retained for graph validation. A reference must
 match that exact locator, including its peer context; another context with the
 same name/version cannot substitute for it. All snapshot variants are checked
-before name/version inventory deduplication. These checks also apply to 9.0.
+independently of name/version inventory deduplication. These checks also apply to 9.0.
 Different origins for the same name/version degrade the inventory origin to
 unknown. Uninstallable optional snapshots remain inventoried.
 
