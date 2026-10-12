@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Agrega inventario offline de pnpm v8 (lockfile 6.0), layouts root/workspace, aliases y variantes de peers anidadas.
+- Corrige la validación de referencias de peers en pnpm v9: comprueba todas las variantes y exige el locator exacto, evitando que otra variante oculte referencias ausentes.
+
 ## 0.3.6 — 2026-10-10
 
 - Agrega inventario offline de Dart/Flutter `pubspec.lock`, fuentes hosted/Git/path/SDK excluidas de OSV y visualización de informes Dart.

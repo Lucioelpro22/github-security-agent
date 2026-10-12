@@ -427,12 +427,25 @@ class _StrictPnpmLoader(yaml.SafeLoader):  # type: ignore[misc]
 
 
 def _pnpm_locator(key: str) -> tuple[str, str, str]:
-    locator = key.lstrip("/")
+    if key.startswith("//") or len(key) > 4096:
+        raise ValueError("invalid pnpm package locator")
+    locator = key.removeprefix("/")
     peer_suffix = locator.find("(")
     if peer_suffix >= 0:
-        if not locator.endswith(")") or not re.fullmatch(
-            r"\([^()]+\)(?:\([^()]+\))*", locator[peer_suffix:]
-        ):
+        suffix = locator[peer_suffix:]
+        depth = 0
+        for index, character in enumerate(suffix):
+            if character == "(":
+                depth += 1
+                if depth > MAX_PNPM_YAML_DEPTH:
+                    raise ValueError("invalid pnpm peer locator")
+            elif character == ")":
+                depth -= 1
+                if depth < 0 or suffix[index - 1] == "(":
+                    raise ValueError("invalid pnpm peer locator")
+            elif depth == 0 or not re.fullmatch(r"[A-Za-z0-9@/._+!:-]", character):
+                raise ValueError("invalid pnpm peer locator")
+        if depth != 0 or not suffix.endswith(")"):
             raise ValueError("invalid pnpm peer locator")
         locator = locator[:peer_suffix]
     if locator.startswith("@"):
@@ -501,23 +514,44 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
 
     unique: dict[tuple[str, str], Dependency] = {}
     for document in documents:
-        if document.get("lockfileVersion") != "9.0":
+        lockfile_version = document.get("lockfileVersion")
+        if lockfile_version not in ("6.0", "9.0"):
             raise ValueError("unsupported pnpm lockfile version")
+        legacy = lockfile_version == "6.0"
         importers = document.get("importers")
-        packages = document.get("packages")
-        snapshots = document.get("snapshots")
+        if legacy and "importers" not in document:
+            importers = {".": document}
+        elif legacy and any(
+            section in document
+            for section in ("dependencies", "devDependencies", "optionalDependencies")
+        ):
+            raise ValueError("ambiguous pnpm importer layout")
+        packages = document.get("packages", {} if legacy else None)
+        snapshots = packages if legacy else document.get("snapshots")
+        if legacy and "snapshots" in document:
+            raise ValueError("invalid pnpm v6 snapshots")
         if not all(isinstance(item, dict) for item in (importers, packages, snapshots)):
             raise ValueError("invalid pnpm lockfile structure")
-        document_snapshots: dict[tuple[str, str], Any] = {}
+        document_snapshots: dict[str, Any] = {}
         for snapshot_key, snapshot in snapshots.items():
             if not isinstance(snapshot_key, str) or not isinstance(snapshot, dict):
                 raise ValueError("invalid pnpm snapshot")
+            if legacy and not snapshot_key.startswith("/"):
+                raise ValueError("unsupported pnpm v6 package locator")
             name, version, package_key = _pnpm_locator(snapshot_key)
-            metadata = packages.get(package_key)
+            if legacy and (
+                not _SWIFT_VERSION.fullmatch(version)
+                or any(
+                    part.isdigit() and len(part) > 1 and part.startswith("0")
+                    for part in version.split("+", 1)[0].partition("-")[2].split(".")
+                )
+            ):
+                raise ValueError("pnpm v6 package version is not exact")
+            metadata = snapshot if legacy else packages.get(package_key)
             if not isinstance(metadata, dict):
                 raise ValueError("pnpm snapshot has no package metadata")
             identity = (name, version)
-            document_snapshots[identity] = snapshot
+            document_snapshots[snapshot_key] = snapshot
             source_kind = _pnpm_source_kind(metadata)
             if identity in unique:
                 previous = unique[identity]
@@ -529,18 +563,27 @@ def _parse_pnpm_lock(text: str, path: str, limit: int) -> tuple[list[Dependency]
                 unique[identity] = Dependency(name, version, "npm", path, source_kind)
 
         def validate_reference(
-            name: Any, version: Any, available: dict[tuple[str, str], Any]
+            name: Any, version: Any, available: dict[str, Any], *, legacy: bool = legacy
         ) -> None:
             if not isinstance(name, str) or not isinstance(version, str) or not version:
                 raise ValueError("invalid pnpm dependency reference")
-            if version.startswith(("link:", "workspace:", "file:", "directory:")):
+            if version.startswith(("link:", "workspace:")):
+                return
+            if version.startswith(("file:", "directory:")):
+                if legacy:
+                    raise ValueError("unsupported pnpm local dependency")
                 return
             if version.startswith("npm:"):
                 target = version.removeprefix("npm:")
-                target_name, target_version, _ = _pnpm_locator(target)
+            elif version.startswith("/"):
+                target = version.removeprefix("/")
             else:
-                target_name, target_version, _ = _pnpm_locator(f"{name}@{version}")
-            if (target_name, target_version) not in available:
+                base = version.split("(", 1)[0]
+                # Alias references identify the resolved package, not the importer name.
+                target = version if "@" in base else f"{name}@{version}"
+            _pnpm_locator(target)
+            key = f"/{target}" if legacy else target
+            if key not in available:
                 raise ValueError("pnpm dependency has no snapshot")
 
         dependency_sections = (
