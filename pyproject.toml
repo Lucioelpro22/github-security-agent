@@ -21,7 +21,7 @@ github-security-agent = "github_security_agent.cli:main"
 dev = [
   "pytest>=9.1.1,<10",
   "pytest-cov>=7.1.0,<8",
-  "ruff>=0.16.10,<1",
+  "ruff>=0.17.0,<1",
   "mypy>=2.4.0,<3",
 ]
 
